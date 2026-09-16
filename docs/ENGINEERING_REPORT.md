@@ -13,6 +13,5 @@ contracts. Public detector evidence is synthetic, not private-corpus performance
 Independent domain annotation, consumer playback, subjective quality, learned
 detector comparison and general hardware qualification remain separate work.
 
-Private evaluation results and original historical reports are retained locally,
-not published. See detector evaluation, benchmark instructions, release guidance
-and the privacy cleanup record for the disclosure boundary.
+See detector evaluation, benchmark instructions, release guidance and publication
+guidelines for reproducible checks and contributor requirements.

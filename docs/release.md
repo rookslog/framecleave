@@ -2,7 +2,7 @@
 
 Only synthetic evaluation evidence is publishable. Private labels, source hashes,
 timings and aggregate results stay local along with footage/reports. Read the
-[public-data boundary and history cleanup](privacy-cleanup.md) before publishing.
+[publication guidelines](publication.md) before publishing.
 
 The current artifact is **0.1.0rc1**. This is a working, tested engineering candidate,
 not a completed qualification for unattended processing on macOS 27. The release
