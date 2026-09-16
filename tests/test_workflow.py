@@ -174,8 +174,9 @@ def test_workflow_annotates_every_gray_card_frame_without_changing_partition(tmp
     graph = ('[0:v]trim=end_frame=20,setpts=PTS-STARTPTS[a];'
              '[1:v]trim=end_frame=10,setpts=PTS-STARTPTS[b];'
              '[2:v]trim=end_frame=20,setpts=PTS-STARTPTS[c];[a][b][c]concat=n=3:v=1:a=0[v]')
+    # FFmpeg 7's concat output otherwise leaves the final MOV frame duration at zero.
     subprocess.run(command + ['-filter_complex', graph, '-map', '[v]', '-c:v', 'libx264',
-                              '-threads', '1', '-bf', '0', str(source)], check=True)
+                              '-threads', '1', '-bf', '0', '-r', '30', str(source)], check=True)
     out = tmp_path / 'review'
     process_video(source, out, Config(threads=1), cuts=[20, 30], dry_run=True)
     index = json.loads((out / 'scene-index.json').read_text())

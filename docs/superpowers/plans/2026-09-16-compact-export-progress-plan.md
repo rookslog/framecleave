@@ -21,6 +21,16 @@ The owner authorized synthetic-only public evidence and branch/tag history rewri
 
 ## Execution State
 
+Linux CI follow-up: the gray-card integration fixture omitted an explicit output
+rate. Native FFmpeg 7.1 reproduced the Linux failure locally: all 50 frames decode,
+but the final frame has zero duration and its PTS equals the stream endpoint.
+Explicit `-r 30` restores the fixture's intended 30 fps and final duration; the
+same integration test changed from failing to passing with FFmpeg 7.1 generation.
+Production timing checks are unchanged. Fresh local gate: 210 tests passed in
+62.70 seconds, Ruff clean, release audit passed for 85 tracked files (no archives),
+whitespace clean. The pushed fix still needs fresh remote CI; privacy readiness
+remains blocked on the independent owner cache decision above.
+
 - Tasks 1–6: committed on `feat/compact-export-and-progress`.
 - Task 7: original runner/generated evidence implemented; private evaluation stays local. Its per-scene compact-default gate is paused after clarification; separate stream-copy/one-final-encode experiments are complete.
 - Last committed-slice software gate, before Task 9 red tests: 167 tests passed; full Ruff and release audit clean. This is historical software evidence, not a claim that the pending red tests pass.
