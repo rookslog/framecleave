@@ -1,5 +1,12 @@
 # Changelog
 
+## Public-data cleanup — 2026-09-16
+
+- Private-derived labels, fingerprints, timings and results are local-only, including
+  aggregate measurements. Public benchmark evidence is synthetic only.
+- Published branch/tag history is rewritten under owner authorization. Cached old
+  history can remain; see the privacy cleanup record. Runtime behavior is unchanged.
+
 ## 0.1.0rc1 — 2026-09-15/16
 
 Initial installable engineering candidate: temporal/geometric detector, separate review
