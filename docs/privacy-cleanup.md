@@ -18,6 +18,12 @@ Runtime behavior and original videos/reports are outside the cleanup write set.
 
 ## Limits
 
+Post-push check: the private annotation directory is absent from current main,
+but an old annotation remains readable by its original commit ID. The rewritten
+branches/tag and sanitized PR description are published; PR 1 remains draft
+pending the owner's server-cache decision. Exact reproduction details are retained
+privately, not linked here. GitHub Support must assess any server-side purge request.
+
 Branch/tag rewriting changes commit IDs. Existing clones must be reconciled or
 recloned, never merged back with the old history. GitHub-managed PR refs, cached
 diffs, old commit URLs and third-party clones can retain removed objects; a
