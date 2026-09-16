@@ -72,7 +72,20 @@ pre{overflow:auto;font-size:12px}.tag{font-size:13px;border:1px solid #6d7884;bo
             if asset:
                 number = scene['start_frame'] if key == 'start' else scene['last_frame']
                 parts.append(f'<figure><img loading="lazy" src="{_safe_asset(asset)}" alt="{key} frame {number}"><figcaption>{key.capitalize()} · frame {number}</figcaption></figure>')
-        parts.append('</div></section>')
+        parts.append('</div>')
+        annotation = scene.get('transition', {})
+        if annotation.get('classification') in {'transition_candidate', 'ambiguous'}:
+            label = 'transition candidate' if annotation['classification'] == 'transition_candidate' else 'ambiguous transition'
+            parts.append(f"<p class='note'>{label} · [{scene['start_frame']}, {scene['end_frame']}) · Default: keep. "
+                         'Classification alone never removes frames; review audio and neighboring content.</p>')
+            parts.append('<details><summary>Uncalibrated transition evidence</summary><pre>' +
+                         escape(json.dumps(annotation.get('evidence', {}), indent=2)) + '</pre></details>')
+            parts.append('<p>Copy a command after review (replace JOB):</p><pre>' + escape(
+                f"framecleave plan JOB --transition {scene['number']}=keep -o JOB/export-plan.json\n"
+                f"framecleave plan JOB --transition {scene['number']}=collapse -o JOB/export-plan.json\n"
+                f"framecleave plan JOB --transition {scene['number']}=omit -o JOB/export-plan.json"
+            ) + '</pre>')
+        parts.append('</section>')
     for decision, title in [('cut', 'Accepted boundaries'), ('review', 'Needs review')]:
         parts.append(f'<h2>{title}</h2>')
         if decision == 'review':

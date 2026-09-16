@@ -118,6 +118,16 @@ rational timing/endpoints, preserved properties, and SSIM/PSNR evidence. This ad
 second encode and temporary disk usage. Reference replay requires the recorded FFmpeg
 build and encoder-thread settings; `verify --threads` controls decoding resources only.
 
+### Transition annotations
+
+Inspection records evidence for scenes under 30 frames, examining every downscaled
+frame plus neighboring context and per-channel interval audio RMS. Stable neutral
+cards may be labeled `transition_candidate`; active/unknown audio, overlays, changing
+uniform content, or missing two-sided context require review. Evidence is scoped to
+the generic neutral-card classifier, not a qualified private-specific template family.
+Classification never omits frames or changes the analysis partition. The default
+editorial action is keep, and changed annotation content blocks resume.
+
 ## Outputs and safety
 
 ```text

@@ -160,3 +160,52 @@ def test_compact_stream_copy_is_reverified_under_the_exact_copy_contract(tmp_pat
     result = verify_job(source, out / 'scene-index.json')
     assert result['verified'] is True
     assert result['scenes'][1]['video']['pixel_equality'] == 'equal'
+
+
+def test_workflow_annotates_every_gray_card_frame_without_changing_partition(tmp_path):
+    import subprocess
+    from framecleave.config import Config
+    from framecleave.workflow import process_video
+
+    source = tmp_path / 'card.mov'
+    command = ['ffmpeg', '-v', 'error']
+    for color in ['red', '0x808080', 'blue']:
+        command += ['-f', 'lavfi', '-i', f'color=c={color}:size=160x120:rate=30:duration=1']
+    graph = ('[0:v]trim=end_frame=20,setpts=PTS-STARTPTS[a];'
+             '[1:v]trim=end_frame=10,setpts=PTS-STARTPTS[b];'
+             '[2:v]trim=end_frame=20,setpts=PTS-STARTPTS[c];[a][b][c]concat=n=3:v=1:a=0[v]')
+    subprocess.run(command + ['-filter_complex', graph, '-map', '[v]', '-c:v', 'libx264',
+                              '-threads', '1', '-bf', '0', str(source)], check=True)
+    out = tmp_path / 'review'
+    process_video(source, out, Config(threads=1), cuts=[20, 30], dry_run=True)
+    index = json.loads((out / 'scene-index.json').read_text())
+    assert [scene['start_frame'] for scene in index['scenes']] == [0, 20, 30]
+    annotation = index['scenes'][1]['transition']
+    assert annotation['classification'] == 'transition_candidate'
+    assert annotation['evidence']['frames_examined'] == 10
+    assert annotation['source_range'] == [20, 30]
+    assert not (out / 'scenes').exists()
+
+
+def test_workflow_records_audio_activity_for_short_scene_evidence(source_video, tmp_path):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video
+
+    out = tmp_path / 'audio-review'
+    process_video(source_video, out, Config(threads=1), cuts=[7], dry_run=True)
+    index = json.loads((out / 'scene-index.json').read_text())
+    assert index['scenes'][0]['transition']['evidence']['audio_rms_peak'] > 0
+
+
+def test_resume_rejects_edited_transition_annotations(source_video, tmp_path):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video
+
+    out = tmp_path / 'transition-integrity'
+    process_video(source_video, out, Config(threads=1), cuts=[7], dry_run=True)
+    path = out / 'scene-index.json'
+    value = json.loads(path.read_text())
+    value['scenes'][0]['transition']['classification'] = 'transition_candidate'
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='transition annotation'):
+        process_video(source_video, out, Config(threads=1), cuts=[7], dry_run=True, resume=True)
