@@ -10,6 +10,7 @@ import sys
 from . import __version__
 from .config import load_config
 from .diagnostics import diagnostics
+from .presentation import OutputMode, TerminalProgressSink
 
 
 def parse_cuts(text: str) -> list[int]:
@@ -62,18 +63,35 @@ def _presentation(p):
     p.add_argument('--json', action='store_true', help='Write one machine-readable JSON result to stdout.')
     group = p.add_mutually_exclusive_group()
     group.add_argument('-q', '--quiet', action='store_true', help='Suppress progress and non-JSON success output.')
-    group.add_argument('-v', '--verbose', action='store_true', help='Include diagnostic command logging on stderr.')
+    group.add_argument('-v', '--verbose', action='store_true', help='Write lifecycle and attempt milestones to stderr.')
+    group.add_argument('--debug', action='store_true', help='Include diagnostic command logging and tracebacks on stderr; output may contain private paths.')
+
+
+def _output_mode(args) -> OutputMode:
+    if args.quiet:
+        return OutputMode.QUIET
+    if args.verbose:
+        return OutputMode.VERBOSE
+    if args.debug:
+        return OutputMode.DEBUG
+    return OutputMode.DEFAULT
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setLevel(logging.DEBUG if args.verbose else logging.ERROR if args.quiet else logging.INFO)
-    handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    mode = _output_mode(args)
+    sink = TerminalProgressSink(sys.stderr, mode)
     logger = logging.getLogger('framecleave')
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
+    previous_level = logger.level
+    handler = None
+    if mode is OutputMode.DEBUG:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+        logger.setLevel(logging.DEBUG)
+        logger.addHandler(handler)
     code = 0
+    result = None
     try:
         if args.command == 'doctor':
             result = diagnostics()
@@ -114,16 +132,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             print(json.dumps({'error': str(exc), 'error_type': type(exc).__name__}))
         print(f'framecleave: {exc}', file=sys.stderr)
-        if args.verbose:
+        if mode is OutputMode.DEBUG:
             logger.exception('Diagnostic traceback')
         return 2
     except Exception as exc:
         if args.json:
             print(json.dumps({'error': str(exc), 'error_type': type(exc).__name__}))
         print(f'framecleave: {exc}', file=sys.stderr)
-        if args.verbose:
+        if mode is OutputMode.DEBUG:
             logger.exception('Diagnostic traceback')
         return 1
     finally:
-        logger.removeHandler(handler)
-        handler.close()
+        sink.close(result)
+        if handler is not None:
+            logger.removeHandler(handler)
+            handler.close()
+            logger.setLevel(previous_level)

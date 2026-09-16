@@ -2,6 +2,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 
 def call_cli(*args):
     return subprocess.run([sys.executable, '-m', 'framecleave', *map(str, args)], capture_output=True, text=True)
@@ -15,6 +17,30 @@ def test_help_version_and_diagnostics():
     result=call_cli('doctor','--json')
     assert result.returncode == 0
     assert json.loads(result.stdout)['backend'] == 'software-cpu'
+
+
+@pytest.mark.parametrize('flag', ['--quiet', '--verbose', '--debug'])
+def test_presentation_flags_are_accepted_and_keep_stdout_machine_readable(flag):
+    result = call_cli('doctor', flag, '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['ok'] is True
+    assert result.stdout.count('\n') == 1
+
+
+def test_presentation_flags_are_mutually_exclusive():
+    result = call_cli('doctor', '--verbose', '--debug')
+    assert result.returncode == 2
+
+
+@pytest.mark.parametrize('flag', [None, '--verbose', '--debug'])
+def test_progress_modes_never_write_progress_to_stdout(flag):
+    args = ['doctor', '--json']
+    if flag:
+        args.insert(1, flag)
+    result = call_cli(*args)
+    assert result.returncode == 0, result.stderr
+    assert list(json.loads(result.stdout))
+    assert result.stdout.count('\n') == 1
 
 
 def test_split_dry_run_cli_and_wrong_cuts(source_video,tmp_path):
