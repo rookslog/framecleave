@@ -7,7 +7,9 @@ import json
 import math
 import os
 from pathlib import Path
+import time
 from typing import Protocol
+import uuid
 
 
 TERMINAL_EVENTS = frozenset({"job_finished", "job_failed", "batch_finished", "batch_interrupted", "worker_lost"})
@@ -83,6 +85,33 @@ class NullProgressSink:
 
     def close(self, result: dict | None = None) -> None:
         pass
+
+
+class ProgressReporter:
+    """Create ordered events for one job while leaving sink ownership to the caller."""
+
+    def __init__(self, sink: ProgressSink | None = None, *, run_id: str | None = None,
+                 job_id: str | None = None, clock=time.monotonic) -> None:
+        self.sink = sink or NullProgressSink()
+        self.run_id = run_id or uuid.uuid4().hex
+        self.job_id = job_id
+        self.clock = clock
+        self.started = clock()
+        self.sequence = 0
+
+    def emit(self, event: str, phase: str, **values) -> ProgressEvent:
+        values.setdefault("job_id", self.job_id)
+        values.setdefault("elapsed_seconds", self.clock() - self.started)
+        progress_event = ProgressEvent(
+            run_id=self.run_id,
+            event=event,
+            phase=phase,
+            sequence=self.sequence,
+            **values,
+        )
+        self.sequence += 1
+        self.sink.emit(progress_event)
+        return progress_event
 
 
 class CompositeProgressSink:

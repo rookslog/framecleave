@@ -3,6 +3,17 @@ import subprocess
 import pytest
 
 
+class CollectingSink:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event):
+        self.events.append(event)
+
+    def close(self, result=None):
+        pass
+
+
 def timeline_from_source(source):
     from framecleave.media import probe
     from framecleave.detector import analyze
@@ -23,6 +34,53 @@ def test_non_keyframe_split_is_pixel_and_sample_exact(source_video, tmp_path):
     assert result["video"]["all_pts_equal"]
     assert result["audio"][0]["samples_verified"] == 64000
     assert result["audio"][0]["all_samples_equal"]
+
+
+def test_rejected_attempt_is_recovered_and_certified(source_video, tmp_path, monkeypatch):
+    from framecleave.export import ExportSession
+    from framecleave.media import MediaError
+    import framecleave.export as export_module
+
+    info, timeline = timeline_from_source(source_video)
+    scene = timeline.scenes([7, 47])[1]
+    sink = CollectingSink()
+    real_run = export_module.run
+    calls = 0
+
+    def fail_first(command):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise MediaError('simulated bounded failure detail')
+        return real_run(command)
+
+    monkeypatch.setattr(export_module, 'run', fail_first)
+    with ExportSession(info, timeline, tmp_path / 'work', progress=sink, job_id='job-1') as session:
+        result = session.export(scene, tmp_path / 'scene.mov')
+
+    assert result['method'] == 'lossless-reencode'
+    assert [event.event for event in sink.events].count('attempt_rejected') == 1
+    assert sink.events[-1].event == 'scene_certified'
+    assert sink.events[-1].recovered is True
+    assert not any(event.event == 'scene_failed' for event in sink.events)
+
+
+def test_exhausted_attempts_emit_one_terminal_scene_failure(source_video, tmp_path, monkeypatch):
+    from framecleave.export import ExportSession
+    from framecleave.media import MediaError
+    import framecleave.export as export_module
+
+    info, timeline = timeline_from_source(source_video)
+    scene = timeline.scenes([7, 47])[1]
+    sink = CollectingSink()
+    monkeypatch.setattr(export_module, 'run', lambda command: (_ for _ in ()).throw(MediaError('nope')))
+
+    with ExportSession(info, timeline, tmp_path / 'work', progress=sink, job_id='job-1') as session:
+        with pytest.raises(MediaError, match='No verified export'):
+            session.export(scene, tmp_path / 'scene.mov')
+
+    assert [event.event for event in sink.events].count('scene_failed') == 1
+    assert sink.events[-1].event == 'scene_failed'
 
 
 def test_one_frame_scene_is_not_discarded_by_mov_muxer(source_video, tmp_path):

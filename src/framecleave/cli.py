@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
                 from .workflow import process_video
                 result = process_video(args.source, args.output, config, dry_run=args.command == 'inspect' or args.dry_run,
                                        thumbnails=getattr(args, 'thumbnails', False), resume=args.resume,
-                                       mode=args.mode, cuts=args.cuts, index_path=args.index)
+                                       mode=args.mode, cuts=args.cuts, index_path=args.index, progress=sink)
         if args.json:
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         elif not args.quiet:

@@ -2,6 +2,17 @@ import json
 import pytest
 
 
+class CollectingSink:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event):
+        self.events.append(event)
+
+    def close(self, result=None):
+        pass
+
+
 def test_dry_run_has_index_report_and_no_clips(source_video, tmp_path):
     from framecleave.workflow import process_video
     from framecleave.config import Config
@@ -15,6 +26,21 @@ def test_dry_run_has_index_report_and_no_clips(source_video, tmp_path):
     assert len(list((out / 'thumbnails').glob('*.jpg'))) > 3
     assert not (out / 'scenes').exists()
     assert not (out / '.lock').exists()
+
+
+def test_workflow_emits_analysis_report_and_terminal_lifecycle(source_video, tmp_path):
+    from framecleave.workflow import process_video
+    from framecleave.config import Config
+
+    sink = CollectingSink()
+    process_video(source_video, tmp_path / 'review', Config(), dry_run=True, cuts=[7, 47],
+                  progress=sink, job_id='job-1')
+    names = [event.event for event in sink.events]
+    assert names[0] == 'job_started'
+    assert {'probing_started', 'analyzing_started', 'boundaries_detected',
+            'report_started', 'report_finished'} <= set(names)
+    assert names[-1] == 'job_finished'
+    assert all(event.job_id == 'job-1' for event in sink.events)
 
 
 def test_split_resume_and_tamper_detection(source_video, tmp_path):

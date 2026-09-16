@@ -53,6 +53,25 @@ def test_split_dry_run_cli_and_wrong_cuts(source_video,tmp_path):
     assert 'Traceback' not in result.stderr
 
 
+def test_split_progress_modes_keep_recovered_diagnostics_bounded(source_video, tmp_path):
+    default = call_cli('split', source_video, '-o', tmp_path / 'default', '--cuts', '30,60', '--json')
+    assert default.returncode == 0, default.stderr
+    assert 'Non-monotonic DTS' not in default.stderr
+    assert 'attempt rejected' not in default.stderr
+
+    verbose = call_cli('split', source_video, '-o', tmp_path / 'verbose', '--cuts', '30,60',
+                       '--verbose', '--json')
+    assert verbose.returncode == 0, verbose.stderr
+    assert 'attempt rejected' in verbose.stderr
+    assert 'Non-monotonic DTS' not in verbose.stderr
+
+    debug = call_cli('split', source_video, '-o', tmp_path / 'debug', '--cuts', '30,60',
+                     '--debug', '--json')
+    assert debug.returncode == 0, debug.stderr
+    assert 'DEBUG: exec' in debug.stderr
+    assert json.loads(debug.stdout)['status'] == 'complete'
+
+
 def test_batch_isolates_failure_and_resumes(source_video,tmp_path):
     import shutil
     inputs=tmp_path/'inputs'

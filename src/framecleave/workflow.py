@@ -18,6 +18,7 @@ from .diagnostics import diagnostics
 from .export import ExportSession, output_suffix, whole_scene
 from .media import MediaError, probe, sha256_file
 from .model import SCHEMA_VERSION, read_index, validate_index
+from .progress import ProgressReporter, ProgressSink
 from .report import make_thumbnails, render_report
 from .storage import JobDirectory, JobLog, atomic_json
 
@@ -47,11 +48,20 @@ def _assert_contained(root: Path, path: Path) -> None:
 
 def process_video(source: Path, directory: Path, config: Config, *, dry_run: bool = False,
                   thumbnails: bool = False, resume: bool = False, mode: str = 'auto',
-                  cuts: list[int] | None = None, index_path: Path | None = None) -> dict:
+                  cuts: list[int] | None = None, index_path: Path | None = None,
+                  progress: ProgressSink | None = None, job_id: str | None = None) -> dict:
     if cuts is not None and index_path is not None:
         raise ValueError('Use either explicit frame cuts or an imported index, not both')
     start = time.monotonic()
-    info = probe(source)
+    reporter = ProgressReporter(progress, job_id=job_id or Path(directory).name)
+    reporter.emit('job_started', 'starting')
+    reporter.emit('probing_started', 'probing')
+    try:
+        info = probe(source)
+    except BaseException as exc:
+        reporter.emit('job_failed', 'probing', outcome='failed',
+                      reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'probe-failed')
+        raise
     request = _request(config, mode, cuts, index_path)
     with JobDirectory(directory, resume=resume) as root, JobLog(root):
         for asset in ['thumbnails', 'scenes', 'scratch', 'certificates', 'scene-index.json', 'state.json']:
@@ -97,7 +107,13 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                     boundary.pop('thumbnails', None)
             else:
                 LOG.info('Analyzing %s', info.path.name)
-                analysis = analyze(info, config, lambda n: LOG.info('%s: decoded %d frames', info.path.name, n))
+                reporter.emit('analyzing_started', 'analyzing')
+
+                def analysis_progress(number: int) -> None:
+                    LOG.info('%s: decoded %d frames', info.path.name, number)
+                    reporter.emit('analysis_progress', 'analyzing', completed=number, unit='frames')
+
+                analysis = analyze(info, config, analysis_progress)
                 timeline = analysis.timeline
                 if cuts is None:
                     boundaries = detect(info, analysis, config)
@@ -110,6 +126,8 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                     boundaries = [{'frame': n, 'pts': timeline.pts[n], 'decision': 'cut',
                                    'reason': 'explicit user frame boundary', 'evidence': {}} for n in cuts]
                     detector = {'name': 'explicit-frame-cuts', 'version': '1'}
+                reporter.emit('boundaries_detected', 'analyzing', completed=len(accepted),
+                              total=len(accepted), unit='boundaries')
                 index = {'schema_version': SCHEMA_VERSION, 'tool_version': __version__,
                          'interval_semantics': 'decoded-frames-half-open',
                          'source': info.source_dict(timeline.frame_count), 'timeline': timeline.to_dict(),
@@ -131,12 +149,15 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
             exported = skipped = 0
             if not dry_run:
                 LOG.info('Exporting %d scenes from %s', len(index['scenes']), info.path.name)
+                reporter.emit('export_started', 'exporting', completed=0,
+                              total=len(index['scenes']), unit='scenes')
                 # Refuse symlinked child directories before opening private scratch or clips.
                 for name in ['scenes', 'scratch', 'certificates', 'thumbnails']:
                     _assert_contained(root, root / name)
                     if (root / name).is_symlink():
                         raise ValueError(f'Job subdirectory must not be a symlink: {name}')
-                with ExportSession(info, timeline, root / 'scratch', threads=config.threads, mode=mode) as session:
+                with ExportSession(info, timeline, root / 'scratch', threads=config.threads, mode=mode,
+                                   reporter=reporter, diagnostics='framecleave.log') as session:
                     for scene in index['scenes']:
                         key = str(scene['number'])
                         relative = f"scenes/{scene['number']:04d}{output_suffix(info, timeline, scene, mode)}"
@@ -179,7 +200,9 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                         exported += 1
             if dry_run or thumbnails:
                 make_thumbnails(info, index, root, threads=config.threads)
+            reporter.emit('report_started', 'reporting')
             render_report(index, root)
+            reporter.emit('report_finished', 'reporting', outcome='success')
             if sha256_file(info.path) != info.sha256:
                 raise MediaError('Source content changed during processing; job is not certified complete')
             atomic_json(index_file, index)
@@ -191,10 +214,16 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                       'frame_count': timeline.frame_count, 'exported': exported, 'skipped_verified': skipped,
                       'wall_seconds': state['wall_seconds']}
             atomic_json(root / 'run-summary.json', result)
+            reporter.emit('job_finished', 'complete', completed=len(index['scenes']),
+                          total=len(index['scenes']), unit='scenes', outcome='success')
             return result
         except BaseException as exc:
             state.update(status='interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed', error=str(exc))
             atomic_json(state_path, state)
+            reporter.emit('job_failed', 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
+                          outcome='failed',
+                          reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'job-failed',
+                          diagnostics='framecleave.log')
             raise
 
 

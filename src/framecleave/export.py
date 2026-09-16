@@ -19,6 +19,7 @@ import time
 from .audio import AudioSlice, extract_audio, slice_track
 from .media import MediaError, MediaInfo, PreservationError, ffmpeg_base, probe, run, sha256_file, video_hashes, audit_frame_metadata
 from .model import Timeline
+from .progress import ProgressReporter, ProgressSink
 
 LOG = logging.getLogger(__name__)
 KNOWN = {None, "unknown", "unspecified", "N/A"}
@@ -80,7 +81,9 @@ def compare_properties(source: MediaInfo, output: MediaInfo) -> dict:
 
 
 class ExportSession:
-    def __init__(self, info: MediaInfo, timeline: Timeline, work_directory: Path, *, threads: int = 2, mode: str = "auto"):
+    def __init__(self, info: MediaInfo, timeline: Timeline, work_directory: Path, *, threads: int = 2,
+                 mode: str = "auto", progress: ProgressSink | None = None, job_id: str | None = None,
+                 reporter: ProgressReporter | None = None, diagnostics: str | None = None):
         if mode not in {"auto", "lossless", "copy-only"}:
             raise ValueError("Export mode must be auto, lossless, or copy-only")
         self.info = info
@@ -90,6 +93,8 @@ class ExportSession:
         self.work = Path(tempfile.mkdtemp(prefix="framecleave-export-", dir=parent))
         self.threads = threads
         self.mode = mode
+        self.progress = reporter or ProgressReporter(progress, job_id=job_id)
+        self.diagnostics = diagnostics
         self.reference: list[dict] | None = None
         self.audio = None
         self.frame_audit = None
@@ -229,6 +234,8 @@ class ExportSession:
 
     def export(self, scene: dict, target: Path) -> dict:
         target = Path(target)
+        scene_id = str(scene["number"])
+        self.progress.emit("scene_started", "exporting", scene_id=scene_id)
         if target.exists() or target.is_symlink():
             raise FileExistsError(f"Refusing to overwrite {target}")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -236,8 +243,12 @@ class ExportSession:
         partial = target.with_name(target.name + ".partial")
         if partial.exists() or partial.is_symlink():
             raise FileExistsError(f"Unowned partial output exists: {partial}")
+        failures = []
+        certified = False
         try:
             if whole_scene(scene, self.timeline) and self.mode != "lossless":
+                self.progress.emit("attempt_started", "exporting", scene_id=scene_id,
+                                   attempt_id="whole-file-copy")
                 self.prepare(audio=False)
                 shutil.copyfile(self.info.path, partial)
                 if sha256_file(partial) != self.info.sha256:
@@ -260,8 +271,11 @@ class ExportSession:
                     attempts = [(True, True)] if aligned and self.mode != "lossless" else []
                     if self.mode != "copy-only":
                         attempts += [(False, True), (False, False)]
-                    failures = []
-                    for copy, seek in attempts:
+                    for attempt_number, (copy, seek) in enumerate(attempts, 1):
+                        method = "stream-copy" if copy else "lossless"
+                        attempt_id = f"{method}-{'seek' if seek else 'full'}-{attempt_number}"
+                        self.progress.emit("attempt_started", "exporting", scene_id=scene_id,
+                                           attempt_id=attempt_id)
                         try:
                             command = self._command(scene, partial, parts, copy=copy, seek=seek)
                             run(command)
@@ -278,7 +292,12 @@ class ExportSession:
                         except MediaError as exc:
                             partial.unlink(missing_ok=True)
                             failures.append(str(exc))
-                            LOG.warning("Export verification/attempt failed: %s", exc)
+                            LOG.debug("Export verification/attempt failed: %s", exc)
+                            self.progress.emit(
+                                "attempt_rejected", "exporting", scene_id=scene_id,
+                                attempt_id=attempt_id, outcome="rejected",
+                                reason_code="verification-or-mux-failed", diagnostics=self.diagnostics,
+                            )
                     else:
                         raise MediaError("No verified export could be produced: " + "; ".join(failures))
             result["output_sha256"] = sha256_file(partial)
@@ -288,6 +307,16 @@ class ExportSession:
             # it cannot overwrite an output created concurrently after our first check.
             os.link(partial, target)
             partial.unlink()
+            certified = True
+            self.progress.emit("scene_certified", "exporting", scene_id=scene_id,
+                               outcome="success", recovered=bool(failures))
             return result
+        except BaseException as exc:
+            if not certified:
+                reason = "interrupted" if isinstance(exc, KeyboardInterrupt) else "export-failed"
+                self.progress.emit("scene_failed", "exporting", scene_id=scene_id,
+                                   outcome="failed", reason_code=reason,
+                                   diagnostics=self.diagnostics)
+            raise
         finally:
             partial.unlink(missing_ok=True)
