@@ -16,8 +16,6 @@ class Config:
     detector: str = "temporal"
     context_updates: int = 12
     min_change: float = 4.0
-    cut_ratio: float = 3.0
-    histogram_threshold: float = 0.65
 
     def __post_init__(self) -> None:
         for name, lo, hi in (
@@ -30,8 +28,7 @@ class Config:
         if self.detector not in {"temporal", "pixel", "histogram", "adaptive"}:
             raise ValueError("Unknown detector; use temporal, pixel, histogram, adaptive")
         for name, lo, hi in (
-            ("min_change", 0.01, 255), ("cut_ratio", 1, 100),
-            ("histogram_threshold", 0, 1),
+            ("min_change", 0.01, 255),
         ):
             value = getattr(self, name)
             if type(value) not in (int, float) or not lo <= value <= hi:
