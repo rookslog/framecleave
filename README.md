@@ -226,7 +226,7 @@ alter detection; record/re-evaluate them. The other detector names (`pixel`,
 
 Public evidence is synthetic only. Keep private labels, source hashes, timings,
 results and aggregates local as well as media/reports. See the
-[privacy boundary and history cleanup](docs/privacy-cleanup.md).
+[publication guidelines](docs/publication.md).
 
 ```sh
 python3 -m venv .venv

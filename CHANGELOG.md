@@ -17,12 +17,12 @@
 Engineering candidate: consumer-player/subjective-quality and general damaged-media
 qualification remain open. CRF is not a final-size guarantee. No registry publication.
 
-## Public-data cleanup — 2026-09-16
+## Publication safeguards
 
 - Private-derived labels, fingerprints, timings and results are local-only, including
   aggregate measurements. Public benchmark evidence is synthetic only.
-- Published branch/tag history is rewritten under owner authorization. Cached old
-  history can remain; see the privacy cleanup record. Runtime behavior is unchanged.
+- Release audits reject private evaluation artifacts; synthetic evidence remains
+  available for reproducible checks.
 
 ## 0.1.0rc1 — 2026-09-15/16
 

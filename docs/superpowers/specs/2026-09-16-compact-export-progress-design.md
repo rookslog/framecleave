@@ -1,6 +1,6 @@
 # Compact Export, Progress, and Editorial Planning Design
 
-- **Status:** Stream-copy-first adjustment implemented and locally checked; [PR #1](https://github.com/rookslog/framecleave/pull/1), not merged. Private-derived evidence removed under owner-authorized history cleanup.
+- **Status:** Stream-copy-first adjustment implemented and locally checked; [PR #1](https://github.com/rookslog/framecleave/pull/1), not merged.
 - **Date:** 2026-09-16
 - **Audience:** FrameCleave maintainers and contributors
 - **Post-read action:** Read the clarification and research checkpoint before further implementation. Do not execute the old per-scene compact-default gate without amending its dependent contracts.

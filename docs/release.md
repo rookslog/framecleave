@@ -2,7 +2,7 @@
 
 Only synthetic evaluation evidence is publishable. Private labels, source hashes,
 timings and aggregate results stay local along with footage/reports. Read the
-[public-data boundary and history cleanup](privacy-cleanup.md) before publishing.
+[publication guidelines](publication.md) before publishing.
 
 The current source candidate is **0.2.0rc1**; the supplied 0.1.0rc1 delivery artifacts
 are historical and are not overwritten. This is an engineering candidate,
