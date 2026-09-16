@@ -77,6 +77,10 @@ one job and two decoder threads are deliberately conservative. `--jobs` is bound
 The operator controls output disk location. Lossless export can greatly expand data;
 there is no reliable universal preflight size prediction.
 
+The approved next-generation design for compact export, structured progress, transition
+review, and constrained keyframe planning is documented in
+[Compact Export, Progress, and Editorial Planning Design](superpowers/specs/2026-09-16-compact-export-progress-design.md).
+
 Analysis is bounded in image memory, but numeric timelines scale with frame count.
 The per-frame preservation audit collects FFprobe JSON for the source, and reference
 hashes scale with frame count. Canonical PCM audio is temporary disk data. These are
