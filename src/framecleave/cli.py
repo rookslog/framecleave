@@ -37,7 +37,7 @@ def parser() -> argparse.ArgumentParser:
         p.add_argument('--threads', type=int, help='FFmpeg threads per file (default 2).')
         p.add_argument('--detector', choices=['temporal', 'pixel', 'histogram', 'adaptive'], help='temporal is default; other choices are benchmark baselines.')
         p.add_argument('--resume', action='store_true', help='Reuse a matching job; reject changed source/config/verified output.')
-        p.add_argument('--mode', choices=['auto', 'lossless', 'copy-only'], default='auto', help='auto tries verified copy, then same-codec lossless encoding.')
+        p.add_argument('--mode', choices=['compact', 'auto', 'lossless', 'copy-only'], default='auto', help='auto tries verified copy, then same-codec lossless encoding; compact uses structurally verified same-codec lossy encoding.')
         if name != 'inspect':
             p.add_argument('--dry-run', action='store_true', help='Generate index/report/thumbnails without exporting clips.')
             p.add_argument('--thumbnails', action='store_true', help='Write scene endpoint and boundary thumbnails during export.')
@@ -122,7 +122,10 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == 'batch':
                 print(f"{result['succeeded']}/{result['total']} files succeeded; {result['failed']} failed. {args.output / 'batch-summary.json'}")
             elif args.command == 'verify':
-                print(f"Verified {result['scene_count']} scenes: all decoded source frames and overlapping audio samples match.")
+                if result['pixel_equality'] == 'equal':
+                    print(f"Verified {result['scene_count']} scenes under {result['policy']['mode']}: all decoded source frames and overlapping audio samples match.")
+                else:
+                    print(f"Verified {result['scene_count']} scenes under compact: exact frame timing and lossless audio; video quality evidence recorded.")
             else:
                 print(f"{result['status']}: {result['scene_count']} scenes, {result['review_candidates']} review candidates. {result['output']}")
         return code

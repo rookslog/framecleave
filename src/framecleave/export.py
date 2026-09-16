@@ -19,6 +19,7 @@ import time
 from .audio import AudioSlice, extract_audio, slice_track
 from .media import MediaError, MediaInfo, PreservationError, ffmpeg_base, probe, run, sha256_file, video_hashes, audit_frame_metadata
 from .model import Timeline
+from .policy import ExportPolicy, policy_digest, resolve_policy
 from .progress import ProgressReporter, ProgressSink
 
 LOG = logging.getLogger(__name__)
@@ -83,16 +84,20 @@ def compare_properties(source: MediaInfo, output: MediaInfo) -> dict:
 class ExportSession:
     def __init__(self, info: MediaInfo, timeline: Timeline, work_directory: Path, *, threads: int = 2,
                  mode: str = "auto", progress: ProgressSink | None = None, job_id: str | None = None,
-                 reporter: ProgressReporter | None = None, diagnostics: str | None = None):
-        if mode not in {"auto", "lossless", "copy-only"}:
-            raise ValueError("Export mode must be auto, lossless, or copy-only")
+                 reporter: ProgressReporter | None = None, diagnostics: str | None = None,
+                 policy: ExportPolicy | None = None):
+        if mode not in {"compact", "auto", "lossless", "copy-only"}:
+            raise ValueError("Export mode must be compact, auto, lossless, or copy-only")
         self.info = info
         self.timeline = timeline
         parent = Path(work_directory)
         parent.mkdir(parents=True, exist_ok=True)
         self.work = Path(tempfile.mkdtemp(prefix="framecleave-export-", dir=parent))
         self.threads = threads
-        self.mode = mode
+        self.policy = policy or resolve_policy(mode, source_codec=info.video["codec_name"])
+        if self.policy.mode != mode:
+            raise ValueError("Export policy mode differs from the requested mode")
+        self.mode = self.policy.mode
         self.progress = reporter or ProgressReporter(progress, job_id=job_id)
         self.diagnostics = diagnostics
         self.reference: list[dict] | None = None
@@ -118,7 +123,7 @@ class ExportSession:
         if audio and self.audio is None:
             self.audio = extract_audio(self.info, self.work / "canonical-audio", threads=self.threads)
 
-    def verify_video(self, scene: dict, output: MediaInfo, *, whole: bool = False) -> dict:
+    def verify_exact_video(self, scene: dict, output: MediaInfo, *, whole: bool = False) -> dict:
         self.prepare(audio=False)
         assert self.reference is not None
         decoded = video_hashes(output, threads=self.threads)
@@ -139,12 +144,41 @@ class ExportSession:
         properties = compare_properties(self.info, output)
         digest = hashlib.sha256("".join(x["sha256"] for x in decoded).encode()).hexdigest()
         return {
-            "frames_verified": len(decoded), "all_native_pixels_equal": True, "all_pts_equal": True,
+            "frames_verified": len(decoded), "pixel_equality": "equal",
+            "all_native_pixels_equal": True, "all_pts_equal": True,
             "first_source_frame": scene["start_frame"], "last_source_frame": scene["end_frame"] - 1,
             "first_frame_sha256": decoded[0]["sha256"], "last_frame_sha256": decoded[-1]["sha256"],
             "ordered_frame_hashes_sha256": digest, "end_time_rational": str(end),
             "preserved_attributes": properties,
             "source_profile": self.info.video.get("profile"), "output_profile": output.video.get("profile"),
+        }
+
+    def verify_video(self, scene: dict, output: MediaInfo, *, whole: bool = False) -> dict:
+        """Backward-compatible exact verifier name for library callers and schema-1 jobs."""
+        return self.verify_exact_video(scene, output, whole=whole)
+
+    def verify_compact_video(self, scene: dict, output: MediaInfo) -> dict:
+        """Check compact structure without making a native-pixel equality claim."""
+        self.prepare(audio=False)
+        assert self.reference is not None
+        decoded = video_hashes(output, threads=self.threads)
+        expected = self.reference[scene['start_frame']:scene['end_frame']]
+        if len(decoded) != len(expected):
+            raise MediaError(f'Export decoded {len(decoded)} frames, expected {len(expected)}')
+        origin = self.timeline.endpoint(scene['start_frame']) * self.timeline.time_base
+        for offset, (actual, source) in enumerate(zip(decoded, expected, strict=True)):
+            expected_time = source['pts'] * self.info.time_base - origin
+            if actual['pts'] * output.time_base != expected_time:
+                raise MediaError(f"Export changed the PTS of source frame {scene['start_frame'] + offset}")
+        end = (decoded[-1]['pts'] + decoded[-1]['duration']) * output.time_base
+        expected_end = self.timeline.endpoint(scene['end_frame']) * self.timeline.time_base - origin
+        if end != expected_end:
+            raise MediaError(f'Export final-frame endpoint {end} differs from expected {expected_end}')
+        return {
+            'frames_verified': len(decoded), 'pixel_equality': 'not_applicable',
+            'all_pts_equal': True, 'decode_success': True,
+            'first_source_frame': scene['start_frame'], 'last_source_frame': scene['end_frame'] - 1,
+            'end_time_rational': str(end), 'preserved_attributes': compare_properties(self.info, output),
         }
 
     def verify_audio(self, output: MediaInfo, slices: list[AudioSlice], directory: Path) -> list[dict]:
@@ -162,6 +196,7 @@ class ExportSession:
             if error > tolerance:
                 raise MediaError(f"Audio/video synchronization error {error} exceeds one output clock tick {tolerance}")
             verified.append({**expected.evidence(), "samples_verified": track.samples,
+                             "sample_equality": "equal",
                              "all_samples_equal": True, "first_sample_timing_error_rational": str(error),
                              "timing_error_limit_rational": str(tolerance)})
         return verified
@@ -244,11 +279,16 @@ class ExportSession:
         if partial.exists() or partial.is_symlink():
             raise FileExistsError(f"Unowned partial output exists: {partial}")
         failures = []
+        attempt_records = []
         certified = False
         try:
+            if self.mode == 'compact':
+                raise PreservationError('Compact encoding is not yet enabled; use an explicit exact mode')
             if whole_scene(scene, self.timeline) and self.mode != "lossless":
                 self.progress.emit("attempt_started", "exporting", scene_id=scene_id,
                                    attempt_id="whole-file-copy")
+                attempt_records.append({"attempt_id": "whole-file-copy", "method": "whole-file-copy",
+                                        "outcome": "certified"})
                 self.prepare(audio=False)
                 shutil.copyfile(self.info.path, partial)
                 if sha256_file(partial) != self.info.sha256:
@@ -288,10 +328,16 @@ class ExportSession:
                                       "source_frame_audit": self.frame_audit,
                                       "audio_streams_without_overlap": [a.stream_index for a in self.audio if a not in [p.track for p in parts]],
                                       "command": command}
+                            attempt_records.append({"attempt_id": attempt_id,
+                                                    "method": "stream-copy-video" if copy else "lossless-reencode",
+                                                    "outcome": "certified"})
                             break
                         except MediaError as exc:
                             partial.unlink(missing_ok=True)
                             failures.append(str(exc))
+                            attempt_records.append({"attempt_id": attempt_id, "method": method,
+                                                    "outcome": "rejected",
+                                                    "reason_code": "verification-or-mux-failed"})
                             LOG.debug("Export verification/attempt failed: %s", exc)
                             self.progress.emit(
                                 "attempt_rejected", "exporting", scene_id=scene_id,
@@ -300,6 +346,11 @@ class ExportSession:
                             )
                     else:
                         raise MediaError("No verified export could be produced: " + "; ".join(failures))
+            result.update(schema_version=2, policy=self.policy.to_dict(),
+                          policy_digest=policy_digest(self.policy), attempts=attempt_records,
+                          verification={"video": result["video"].get("pixel_equality", "equal"),
+                                        "audio": "equal" if all(item.get("sample_equality") == "equal"
+                                                                 for item in result["audio"]) else "different"})
             result["output_sha256"] = sha256_file(partial)
             result["output_size_bytes"] = partial.stat().st_size
             result["wall_seconds"] = time.monotonic() - start_time

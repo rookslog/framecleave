@@ -103,3 +103,16 @@ def test_resume_requires_unchanged_certificate(source_video, tmp_path):
     certificate.write_text('{}')
     with pytest.raises(ValueError, match='certificate'):
         process_video(source_video, out, Config(), cuts=[7, 47], resume=True)
+
+
+def test_resume_rejects_a_changed_compact_profile(source_video, tmp_path):
+    from framecleave.config import Config
+    from framecleave.policy import ExportPolicy
+    from framecleave.workflow import process_video
+
+    out = tmp_path / 'compact-review'
+    process_video(source_video, out, Config(), dry_run=True, cuts=[7], mode='compact',
+                  policy=ExportPolicy.compact(crf=16))
+    with pytest.raises(ValueError, match='export mode changed'):
+        process_video(source_video, out, Config(), dry_run=True, cuts=[7], mode='compact', resume=True,
+                      policy=ExportPolicy.compact(crf=20))

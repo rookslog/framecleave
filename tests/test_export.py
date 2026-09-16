@@ -34,6 +34,11 @@ def test_non_keyframe_split_is_pixel_and_sample_exact(source_video, tmp_path):
     assert result["video"]["all_pts_equal"]
     assert result["audio"][0]["samples_verified"] == 64000
     assert result["audio"][0]["all_samples_equal"]
+    assert result['schema_version'] == 2
+    assert result['policy_digest']
+    assert result['video']['pixel_equality'] == 'equal'
+    assert result['audio'][0]['sample_equality'] == 'equal'
+    assert result['attempts'][-1]['outcome'] == 'certified'
 
 
 def test_rejected_attempt_is_recovered_and_certified(source_video, tmp_path, monkeypatch):

@@ -18,6 +18,7 @@ from .diagnostics import diagnostics
 from .export import ExportSession, output_suffix, whole_scene
 from .media import MediaError, probe, sha256_file
 from .model import SCHEMA_VERSION, read_index, validate_index
+from .policy import ExportPolicy, certificate_policy, policy_digest, resolve_policy
 from .progress import ProgressReporter, ProgressSink
 from .report import make_thumbnails, render_report
 from .storage import JobDirectory, JobLog, atomic_json
@@ -25,9 +26,11 @@ from .storage import JobDirectory, JobLog, atomic_json
 LOG = logging.getLogger(__name__)
 
 
-def _request(config: Config, mode: str, cuts: list[int] | None, index_path: Path | None) -> dict:
+def _request(config: Config, mode: str, cuts: list[int] | None, index_path: Path | None,
+             policy: ExportPolicy) -> dict:
     return {'tool_version': __version__, 'detector_version': DETECTOR_VERSION, 'config': config.to_dict(),
-            'mode': mode, 'cuts': cuts, 'imported_index_sha256': sha256_file(index_path) if index_path else None}
+            'mode': mode, 'policy': policy.to_dict(), 'policy_digest': policy_digest(policy),
+            'cuts': cuts, 'imported_index_sha256': sha256_file(index_path) if index_path else None}
 
 
 def _segmentation_digest(index: dict) -> str:
@@ -49,7 +52,8 @@ def _assert_contained(root: Path, path: Path) -> None:
 def process_video(source: Path, directory: Path, config: Config, *, dry_run: bool = False,
                   thumbnails: bool = False, resume: bool = False, mode: str = 'auto',
                   cuts: list[int] | None = None, index_path: Path | None = None,
-                  progress: ProgressSink | None = None, job_id: str | None = None) -> dict:
+                  progress: ProgressSink | None = None, job_id: str | None = None,
+                  policy: ExportPolicy | None = None) -> dict:
     if cuts is not None and index_path is not None:
         raise ValueError('Use either explicit frame cuts or an imported index, not both')
     start = time.monotonic()
@@ -62,7 +66,10 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
         reporter.emit('job_failed', 'probing', outcome='failed',
                       reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'probe-failed')
         raise
-    request = _request(config, mode, cuts, index_path)
+    resolved_policy = policy or resolve_policy(mode, source_codec=info.video['codec_name'])
+    if resolved_policy.mode != mode:
+        raise ValueError('Export policy mode differs from the requested mode')
+    request = _request(config, mode, cuts, index_path, resolved_policy)
     with JobDirectory(directory, resume=resume) as root, JobLog(root):
         for asset in ['thumbnails', 'scenes', 'scratch', 'certificates', 'scene-index.json', 'state.json']:
             _assert_contained(root, root / asset)
@@ -157,7 +164,7 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                     if (root / name).is_symlink():
                         raise ValueError(f'Job subdirectory must not be a symlink: {name}')
                 with ExportSession(info, timeline, root / 'scratch', threads=config.threads, mode=mode,
-                                   reporter=reporter, diagnostics='framecleave.log') as session:
+                                   reporter=reporter, diagnostics='diagnostics.log', policy=resolved_policy) as session:
                     for scene in index['scenes']:
                         key = str(scene['number'])
                         relative = f"scenes/{scene['number']:04d}{output_suffix(info, timeline, scene, mode)}"
@@ -174,6 +181,9 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                                     or old.get('certificate_sha256') != sha256_file(cert_path)):
                                 raise ValueError(f'Previously verified scene {key} has a missing or changed certificate')
                             certificate = json.loads(cert_path.read_text(encoding='utf-8'))
+                            if (certificate.get('schema_version') != resolved_policy.certificate_schema
+                                    or certificate.get('policy_digest') != policy_digest(resolved_policy)):
+                                raise ValueError(f'Previously verified scene {key} has a changed certificate policy')
                             video = certificate.get('video', {})
                             if (certificate.get('output_sha256') != old['sha256']
                                     or video.get('first_source_frame') != scene['start_frame']
@@ -212,7 +222,8 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
             result = {'source': str(info.path), 'output': str(root), 'status': status,
                       'scene_count': len(index['scenes']), 'review_candidates': sum(b['decision'] == 'review' for b in index['boundaries']),
                       'frame_count': timeline.frame_count, 'exported': exported, 'skipped_verified': skipped,
-                      'wall_seconds': state['wall_seconds']}
+                      'wall_seconds': state['wall_seconds'], 'policy': resolved_policy.to_dict(),
+                      'policy_digest': policy_digest(resolved_policy)}
             atomic_json(root / 'run-summary.json', result)
             reporter.emit('job_finished', 'complete', completed=len(index['scenes']),
                           total=len(index['scenes']), unit='scenes', outcome='success')
@@ -223,7 +234,7 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
             reporter.emit('job_failed', 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
                           outcome='failed',
                           reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'job-failed',
-                          diagnostics='framecleave.log')
+                          diagnostics='diagnostics.log')
             raise
 
 
@@ -236,8 +247,19 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
         raise ValueError('Verification source digest differs from the indexed source')
     root = Path(index_path).resolve().parent
     results = []
+    policies = []
+    for scene in index['scenes']:
+        if not scene.get('export'):
+            raise ValueError('Cannot verify a scene without an export certificate')
+        certificate_path = root / scene['export']
+        _assert_contained(root, certificate_path)
+        certificate = json.loads(certificate_path.read_text(encoding='utf-8'))
+        policies.append(certificate_policy(certificate, source_codec=info.video['codec_name']))
+    if len({policy_digest(policy) for policy in policies}) != 1:
+        raise ValueError('Job certificates carry inconsistent export policies')
+    policy = policies[0]
     with tempfile.TemporaryDirectory(prefix='framecleave-verify-') as temporary:
-        with ExportSession(info, timeline, Path(temporary), threads=threads) as session:
+        with ExportSession(info, timeline, Path(temporary), threads=threads, mode=policy.mode, policy=policy) as session:
             for scene in index['scenes']:
                 if not scene.get('output_file'):
                     raise ValueError('Cannot verify an unexported scene')
@@ -245,7 +267,9 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
                 _assert_contained(root, path)
                 output = probe(path)
                 whole = whole_scene(scene, timeline) and output.sha256 == info.sha256
-                video = session.verify_video(scene, output, whole=whole)
+                video = (session.verify_compact_video(scene, output)
+                         if policy.mode == 'compact' and not whole
+                         else session.verify_exact_video(scene, output, whole=whole))
                 audio = []
                 if not whole:
                     session.prepare()
@@ -256,4 +280,6 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
                     audio = session.verify_audio(output, parts, work / 'decoded')
                 results.append({'scene': scene['number'], 'video': video, 'audio': audio,
                                 'all_streams_byte_identical': whole})
-    return {'verified': True, 'scene_count': len(results), 'scenes': results}
+    return {'verified': True, 'scene_count': len(results), 'scenes': results,
+            'policy': policy.to_dict(), 'policy_digest': policy_digest(policy),
+            'pixel_equality': 'not_applicable' if policy.mode == 'compact' else 'equal'}
