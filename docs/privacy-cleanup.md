@@ -20,9 +20,12 @@ Runtime behavior and original videos/reports are outside the cleanup write set.
 
 Post-push check: the private annotation directory is absent from current main,
 but an old annotation remains readable by its original commit ID. The rewritten
-branches/tag and sanitized PR description are published; PR 1 remains draft
-pending the owner's server-cache decision. Exact reproduction details are retained
-privately, not linked here. GitHub Support must assess any server-side purge request.
+branches/tag and sanitized PR description are published. The owner subsequently
+accepted the residual metadata exposure and declined a Support request because
+further removal effort was not worthwhile. This resolves the privacy readiness
+gate; it does not mean the old object was purged. Exact reproduction details are
+retained privately, not linked here. Revisit only if the owner's privacy requirement
+changes or materially different exposed content is discovered.
 
 Branch/tag rewriting changes commit IDs. Existing clones must be reconciled or
 recloned, never merged back with the old history. GitHub-managed PR refs, cached
@@ -31,6 +34,13 @@ force-push is not an Internet-wide erasure. Repository owners may need GitHub
 Support for server-side cached-reference removal. No complete cache purge is claimed.
 
 ## Publication checks
+
+Prevention: keep real-job artifacts outside the checkout. Existing `.gitignore`
+rules exclude media, annotations and non-synthetic benchmark results; the release
+audit rejects forbidden tracked/package entries and private calibration corpora.
+Eight regression cases exercise those guards, and Linux CI runs the audit before
+packaging. Review prose and PR text separately: these guards do not detect every
+private measurement pasted into an otherwise permitted document.
 
 Scan all reachable branch/tag trees and blobs for private fingerprints, account
 paths, forbidden media and derived-data artifacts, not merely the current diff.

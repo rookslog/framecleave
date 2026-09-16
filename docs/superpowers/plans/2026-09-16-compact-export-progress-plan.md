@@ -17,7 +17,7 @@ Standalone editorial plans and keyframe movement are intentionally deferred.
 
 ## Privacy cleanup checkpoint
 
-The owner authorized synthetic-only public evidence and branch/tag history rewriting on 2026-09-16. Private measurements have been removed; original records are retained in the private backup. Historical receipts below predate the rewrite. Final standalone pytest passed 210 tests in 93.70 seconds; Ruff and whitespace passed. Sanitized main passed 89 tests. Runtime source is unchanged; the release audit has generated-only artifact guards and eight new tests. Standard Git history searches found no matches for 43 known private markers. The source/archive/history audit covered 85 tracked files, two archives and 23 commits/181 blobs. Both branches and the existing tag were atomically published with exact leases; PR description is sanitized and the old Actions package artifact is removed. **Blocked on an owner decision:** GitHub still serves an old annotation by its original commit ID. PR 1 stays draft; connector review is not requested until the cache/privacy condition is resolved. See the public privacy cleanup record for the remaining boundary; exact old-object reproduction details are private.
+The owner authorized synthetic-only public evidence and branch/tag history rewriting on 2026-09-16. Private measurements have been removed; original records are retained in the private backup. Historical receipts below predate the rewrite. Final standalone pytest passed 210 tests in 93.70 seconds; Ruff and whitespace passed. Sanitized main passed 89 tests. Runtime source is unchanged; the release audit has generated-only artifact guards and eight new tests. Standard Git history searches found no matches for 43 known private markers. The source/archive/history audit covered 85 tracked files, two archives and 23 commits/181 blobs. Both branches and the existing tag were atomically published with exact leases; PR description is sanitized and the old Actions package artifact is removed. **Owner decision resolved:** the owner accepts the remaining old-annotation metadata exposure and declines Support escalation as not worthwhile. The privacy readiness gate is cleared, not the server-held object. Existing synthetic-only prevention rules remain. See the public privacy cleanup record; exact old-object reproduction details are private.
 
 ## Execution State
 
@@ -28,8 +28,10 @@ Explicit `-r 30` restores the fixture's intended 30 fps and final duration; the
 same integration test changed from failing to passing with FFmpeg 7.1 generation.
 Production timing checks are unchanged. Fresh local gate: 210 tests passed in
 62.70 seconds, Ruff clean, release audit passed for 85 tracked files (no archives),
-whitespace clean. The pushed fix still needs fresh remote CI; privacy readiness
-remains blocked on the independent owner cache decision above.
+whitespace clean. Both Linux and macOS push/PR jobs passed for the fixture-fix
+commit d19ef94 (runs 35153342702 and 35153348232). The owner accepted residual
+metadata exposure and declined Support as not worthwhile; the earlier privacy
+readiness blocker is superseded. No merge or registry publication is authorized.
 
 - Tasks 1–6: committed on `feat/compact-export-and-progress`.
 - Task 7: original runner/generated evidence implemented; private evaluation stays local. Its per-scene compact-default gate is paused after clarification; separate stream-copy/one-final-encode experiments are complete.
