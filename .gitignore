@@ -27,3 +27,9 @@ outputs/
 *.wav
 *.flac
 .DS_Store
+# Private-derived evaluation data is local only; public results are synthetic.
+benchmarks/annotations/
+benchmarks/results/*
+!benchmarks/results/synthetic.json
+!benchmarks/results/compact-export.json
+*private-raw*.json

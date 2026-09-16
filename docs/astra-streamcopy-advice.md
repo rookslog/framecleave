@@ -1,5 +1,8 @@
 # Astra stream-copy consult — 2026-09-16
 
+Privacy note: the local absolute source-code path in the original response has
+been redacted to a repository-relative reference; substantive advice is unchanged.
+
 ## 1. Conclusion
 
 **[Recommendation]** Treat arbitrary-boundary video **and audio** stream-copy as the first implementation candidate for fast review. Imperfect edges are an accepted tradeoff, not automatic grounds for re-encoding or refusal. My earlier advice overconstrained this workflow around preservation guarantees the user did not require.

@@ -1,0 +1,1938 @@
+{
+  "config": {
+    "threads": 2,
+    "analysis_width": 128,
+    "analysis_height": 96,
+    "detector": "temporal",
+    "context_updates": 12,
+    "min_change": 4.0
+  },
+  "environment": {
+    "tool_version": "0.1.0rc1",
+    "system": "Linux",
+    "release": "6.18.44",
+    "machine": "x86_64",
+    "python": "3.13.5",
+    "cpu_count": 5,
+    "packages": {
+      "numpy": "2.3.5",
+      "opencv-python": "4.13.0.92",
+      "opencv-python-headless": "4.13.0.92",
+      "opencv-contrib-python": null,
+      "opencv-contrib-python-headless": null
+    },
+    "backend": "software-cpu",
+    "hardware_acceleration_validated": false,
+    "ffmpeg": {
+      "version_line": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers"
+    },
+    "ffprobe": {
+      "version_line": "ffprobe version 7.1.5-0+deb13u1 Copyright (c) 2007-2026 the FFmpeg developers"
+    },
+    "encoders": [
+      "libx264",
+      "libx265",
+      "ffv1"
+    ],
+    "warnings": [
+      "Multiple OpenCV distributions share cv2; use a fresh isolated environment with exactly one"
+    ],
+    "ok": true,
+    "opencv_build": {
+      "version": "4.13.0",
+      "gui": "QT5",
+      "distribution_count": 2
+    }
+  },
+  "results": [
+    {
+      "id": "synthetic-blur-step",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "7c0949a2f8e2545c8ad8f0e13401c9320238fd6005056e119e9a07f077b08862",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.38109309299989036,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 126582784,
+      "predictions": {
+        "pixel": [],
+        "histogram": [
+          60
+        ],
+        "adaptive": [
+          60
+        ],
+        "temporal": [
+          60
+        ],
+        "temporal+review": [
+          60
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 900.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 900.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 900.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 900.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 60,
+          "pts": 2000,
+          "decision": "cut",
+          "reason": "temporal discontinuity, changed distribution, weak correspondence",
+          "evidence": {
+            "corr": 0.44589558243751526,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 17.60801887512207,
+            "hist": 0.5384183526039124,
+            "ratio": 17.60801887512207,
+            "block_ratio": 45.62759780883789,
+            "block_peak": 45.62759780883789,
+            "within": 1.0,
+            "cross": 0.44589558243751526,
+            "flash_return": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-camera-shake",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "6ccde791561bbc2094b146e9b9be480918a65c0370afc1e9fb101581062326e7",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.18813516199998048,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 126713856,
+      "predictions": {
+        "pixel": [
+          49,
+          64
+        ],
+        "histogram": [],
+        "adaptive": [],
+        "temporal": [],
+        "temporal+review": []
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            49,
+            64
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "synthetic-dropped-update",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "20dd12a1ae08ccd361dd9377c2fcd7c0cb2c3d9cdc7588644db630c8dc73c18c",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.3936790879997716,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 127762432,
+      "predictions": {
+        "pixel": [
+          60
+        ],
+        "histogram": [],
+        "adaptive": [
+          60
+        ],
+        "temporal": [],
+        "temporal+review": []
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 900.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 900.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "synthetic-exposure-step",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "8ac961afe9e7b59ad504184c742f66aeeb4ed0494ea938c56bb2d8f51a791d4d",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.41645344499966086,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 127762432,
+      "predictions": {
+        "pixel": [],
+        "histogram": [],
+        "adaptive": [
+          60
+        ],
+        "temporal": [],
+        "temporal+review": []
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 1,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 900.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "synthetic-frozen-updates",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "c43b7869ab0a8e7c0d6ed6156cf98429c5aacb48af73873d84a7b67a70beaeab",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.2222771299998385,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 127762432,
+      "predictions": {
+        "pixel": [],
+        "histogram": [],
+        "adaptive": [
+          6,
+          12,
+          18,
+          24,
+          30,
+          36,
+          42,
+          48,
+          54,
+          60,
+          66,
+          72,
+          78,
+          84,
+          90,
+          96,
+          102,
+          108,
+          114
+        ],
+        "temporal": [],
+        "temporal+review": []
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 19,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            6,
+            12,
+            18,
+            24,
+            30,
+            36,
+            42,
+            48,
+            54,
+            60,
+            66,
+            72,
+            78,
+            84,
+            90,
+            96,
+            102,
+            108,
+            114
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 17100.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "synthetic-hard-cut",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "06c290d5434864b52f3f35570c0fa1ddbd6fad6a1f2cf04536b63c59402b318a",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.3838155949997599,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 127762432,
+      "predictions": {
+        "pixel": [
+          60
+        ],
+        "histogram": [],
+        "adaptive": [
+          60
+        ],
+        "temporal": [
+          60
+        ],
+        "temporal+review": [
+          60
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [
+            60
+          ],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 900.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 60,
+          "pts": 2000,
+          "decision": "cut",
+          "reason": "persistent structural break, including similar-histogram changes",
+          "evidence": {
+            "corr": -0.999963104724884,
+            "track": 0.00625,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 36.19471740722656,
+            "hist": 0.24546568095684052,
+            "ratio": 36.19471740722656,
+            "block_ratio": 101.46614074707031,
+            "block_peak": 101.46614074707031,
+            "within": 1.0,
+            "cross": -0.999963104724884,
+            "flash_return": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-lens-cover",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "793bbe1591f207e1517fd3157236190599ac285c3ea1e6ac158588c77e63326b",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.504521029999978,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 128024576,
+      "predictions": {
+        "pixel": [
+          45,
+          76
+        ],
+        "histogram": [
+          45,
+          59,
+          60,
+          61,
+          62,
+          76
+        ],
+        "adaptive": [
+          45,
+          76
+        ],
+        "temporal": [
+          45,
+          76
+        ],
+        "temporal+review": [
+          45,
+          60,
+          61,
+          76
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            45,
+            76
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 6,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            45,
+            59,
+            60,
+            61,
+            62,
+            76
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 5400.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            45,
+            76
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            45,
+            76
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 4,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            45,
+            60,
+            61,
+            76
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 3600.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 45,
+          "pts": 1500,
+          "decision": "cut",
+          "reason": "temporal discontinuity, changed distribution, weak correspondence",
+          "evidence": {
+            "corr": -0.1741541624069214,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 117.29782104492188,
+            "hist": 0.6196909546852112,
+            "ratio": 23.398502349853516,
+            "block_ratio": 20.9467716217041,
+            "block_peak": 123.98958587646484,
+            "within": 0.3789708763360977,
+            "cross": -0.0957617312669754,
+            "flash_return": false
+          }
+        },
+        {
+          "frame": 60,
+          "pts": 2000,
+          "decision": "review",
+          "reason": "transient-return: flash, corruption, or a very short shot is ambiguous",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 8.39832878112793,
+            "hist": 0.8301002383232117,
+            "ratio": 1.4687693119049072,
+            "block_ratio": 1.4295005798339844,
+            "block_peak": 8.87109375,
+            "within": -0.16390778124332428,
+            "cross": -0.4545692503452301,
+            "flash_return": true
+          }
+        },
+        {
+          "frame": 61,
+          "pts": 2033,
+          "decision": "review",
+          "reason": "transient-return: flash, corruption, or a very short shot is ambiguous",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 8.39832878112793,
+            "hist": 0.8301002383232117,
+            "ratio": 1.4687693119049072,
+            "block_ratio": 1.4295005798339844,
+            "block_peak": 8.87109375,
+            "within": -0.16390778124332428,
+            "cross": -0.4545692503452301,
+            "flash_return": true
+          }
+        },
+        {
+          "frame": 76,
+          "pts": 2533,
+          "decision": "cut",
+          "reason": "temporal discontinuity, changed distribution, weak correspondence",
+          "evidence": {
+            "corr": -0.1741541624069214,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 117.29782104492188,
+            "hist": 0.6196909546852112,
+            "ratio": 23.398502349853516,
+            "block_ratio": 20.9467716217041,
+            "block_peak": 123.98958587646484,
+            "within": 0.3789708763360977,
+            "cross": -0.0957617312669754,
+            "flash_return": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-local-same-framing-cut",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "65da16003ef591b112edd5205e9d0b523bb9ccfe9e4b2e77027bc56f0a901a5e",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.40599687199983236,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 128024576,
+      "predictions": {
+        "pixel": [],
+        "histogram": [],
+        "adaptive": [],
+        "temporal": [],
+        "temporal+review": [
+          60
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [
+            60
+          ],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 900.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [
+            60
+          ],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 900.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [
+            60
+          ],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 900.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [
+            60
+          ],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 900.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 60,
+          "pts": 2000,
+          "decision": "review",
+          "reason": "localized discontinuity: an edit and a dropped-update motion event remain ambiguous",
+          "evidence": {
+            "corr": 0.9292704463005066,
+            "track": 0.93125,
+            "inliers": 0.925,
+            "warp_residual": 0.37611049892150955,
+            "sift_inliers": 372,
+            "sift_cov": 0.9011604207371303,
+            "sift_residual": 0.37611049892150955,
+            "mad": 1.1435275077819824,
+            "hist": 0.031625352799892426,
+            "ratio": 1.1435275077819824,
+            "block_ratio": 28.22916603088379,
+            "block_peak": 28.22916603088379,
+            "within": 1.0,
+            "cross": 0.9292704463005066,
+            "flash_return": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-same-histogram-cut",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "51bbd33eccea418878a12b60fd094ad377f5c8017093f4d5ea0e3532fe48ba08",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.4156677200003287,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 128024576,
+      "predictions": {
+        "pixel": [
+          60
+        ],
+        "histogram": [],
+        "adaptive": [
+          60
+        ],
+        "temporal": [
+          60
+        ],
+        "temporal+review": [
+          60
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [
+            60
+          ],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 900.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 60,
+          "pts": 2000,
+          "decision": "cut",
+          "reason": "persistent structural break, including similar-histogram changes",
+          "evidence": {
+            "corr": -0.0006224740645848215,
+            "track": 0.025,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 29,
+            "sift_cov": 0.10063920490777904,
+            "sift_residual": 1.088343144373074,
+            "mad": 27.27663803100586,
+            "hist": 0.0,
+            "ratio": 27.27663803100586,
+            "block_ratio": 54.96223831176758,
+            "block_peak": 54.96223831176758,
+            "within": 1.0,
+            "cross": -0.0006224740645848215,
+            "flash_return": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-short-interstitial",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "8f1ae216f855ec6b58de2bef51fd6f0f73c2240bfa52b8e70511f9c932370f94",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.3783070070003305,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 128024576,
+      "predictions": {
+        "pixel": [
+          58,
+          63
+        ],
+        "histogram": [
+          58,
+          63
+        ],
+        "adaptive": [
+          58,
+          63
+        ],
+        "temporal": [
+          58,
+          63
+        ],
+        "temporal+review": [
+          58,
+          63
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0,
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0,
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0,
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0,
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [
+            0,
+            0
+          ],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 58,
+          "pts": 1933,
+          "decision": "cut",
+          "reason": "temporal discontinuity, changed distribution, weak correspondence",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 84.58189392089844,
+            "hist": 0.9437292814254761,
+            "ratio": 84.58189392089844,
+            "block_ratio": 101.46743774414062,
+            "block_peak": 101.46743774414062,
+            "within": 0.5,
+            "cross": -0.999963104724884,
+            "flash_return": false
+          }
+        },
+        {
+          "frame": 63,
+          "pts": 2100,
+          "decision": "cut",
+          "reason": "temporal discontinuity, changed distribution, weak correspondence",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 81.76174926757812,
+            "hist": 0.9488723278045654,
+            "ratio": 81.76174926757812,
+            "block_ratio": 87.77734375,
+            "block_peak": 87.77734375,
+            "within": 0.5,
+            "cross": -0.999963104724884,
+            "flash_return": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-single-black-frame",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "d03e9583bc948fb1ca3d87b9876ed65c0dabc67cc44b9c74ab5b7caad9fdb4e9",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.4049752639998587,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 128155648,
+      "predictions": {
+        "pixel": [
+          60,
+          61
+        ],
+        "histogram": [
+          60,
+          61
+        ],
+        "adaptive": [
+          60,
+          61
+        ],
+        "temporal": [],
+        "temporal+review": [
+          60,
+          61
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 60,
+          "pts": 2000,
+          "decision": "review",
+          "reason": "transient-return: flash, corruption, or a very short shot is ambiguous",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 125.97203063964844,
+            "hist": 0.9437292814254761,
+            "ratio": 125.97203063964844,
+            "block_ratio": 132.75393676757812,
+            "block_peak": 132.75393676757812,
+            "within": 0.5,
+            "cross": 1.0,
+            "flash_return": true
+          }
+        },
+        {
+          "frame": 61,
+          "pts": 2033,
+          "decision": "review",
+          "reason": "transient-return: flash, corruption, or a very short shot is ambiguous",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 125.97203063964844,
+            "hist": 0.9437292814254761,
+            "ratio": 125.97203063964844,
+            "block_ratio": 132.75393676757812,
+            "block_peak": 132.75393676757812,
+            "within": 0.5,
+            "cross": 1.0,
+            "flash_return": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-single-flash",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "7c6879e868a33bafa01878fc98a32160f1941fa6361010073f84b38ce88b06a1",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.42098340099983034,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 128155648,
+      "predictions": {
+        "pixel": [
+          60,
+          61
+        ],
+        "histogram": [
+          60,
+          61
+        ],
+        "adaptive": [
+          60,
+          61
+        ],
+        "temporal": [],
+        "temporal+review": [
+          60,
+          61
+        ]
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.0,
+          "recall": null,
+          "f1": 0.0,
+          "tolerance_frames": 0,
+          "false_positive_frames": [
+            60,
+            61
+          ],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 1800.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": [
+        {
+          "frame": 60,
+          "pts": 2000,
+          "decision": "review",
+          "reason": "transient-return: flash, corruption, or a very short shot is ambiguous",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 129.02796936035156,
+            "hist": 0.9437292814254761,
+            "ratio": 129.02796936035156,
+            "block_ratio": 142.09764099121094,
+            "block_peak": 142.09764099121094,
+            "within": 0.5,
+            "cross": 1.0,
+            "flash_return": true
+          }
+        },
+        {
+          "frame": 61,
+          "pts": 2033,
+          "decision": "review",
+          "reason": "transient-return: flash, corruption, or a very short shot is ambiguous",
+          "evidence": {
+            "corr": 0.0,
+            "track": 0.0,
+            "inliers": 0.0,
+            "warp_residual": 1.0,
+            "sift_inliers": 0,
+            "sift_cov": 0.0,
+            "sift_residual": 1.0,
+            "mad": 129.02796936035156,
+            "hist": 0.9437292814254761,
+            "ratio": 129.02796936035156,
+            "block_ratio": 142.09764099121094,
+            "block_peak": 142.09764099121094,
+            "within": 0.5,
+            "cross": 1.0,
+            "flash_return": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "synthetic-webcam-noise",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "098028039634452ac9a19de2d2ce66679c86493433b80693aa28fbb36b837723",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.2118057749999025,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 128942080,
+      "predictions": {
+        "pixel": [],
+        "histogram": [],
+        "adaptive": [],
+        "temporal": [],
+        "temporal+review": []
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": []
+    },
+    {
+      "id": "synthetic-whip-pan",
+      "split": "synthetic-post-freeze",
+      "source_sha256": "6e1a084b3a6ac4d2aaa903b9d540400e6c99582f7dfe5b6ae77df5350af614a6",
+      "label_provenance": "Known construction from RNG seed 6017, independent original pixels.",
+      "frame_count": 120,
+      "analysis_plus_detection_seconds_excluding_probe": 0.19743472299978748,
+      "python_process_lifetime_peak_rss_bytes_excludes_ffmpeg": 129204224,
+      "predictions": {
+        "pixel": [],
+        "histogram": [],
+        "adaptive": [],
+        "temporal": [],
+        "temporal+review": []
+      },
+      "metrics": {
+        "pixel": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "histogram": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "adaptive": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        },
+        "temporal+review": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "precision": null,
+          "recall": null,
+          "f1": null,
+          "tolerance_frames": 0,
+          "false_positive_frames": [],
+          "false_negative_frames": [],
+          "offsets_frames": [],
+          "false_positives_per_hour": 0.0,
+          "false_negatives_per_hour": 0.0,
+          "duration_seconds": 4.0
+        }
+      },
+      "evidence": []
+    }
+  ],
+  "note": "Zero-frame tolerance; temporal+review is a review workload, NOT automatic-cut recall."
+}
