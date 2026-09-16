@@ -17,7 +17,7 @@ class VideoPolicy:
     encoder_build: str | None = None
 
     def __post_init__(self) -> None:
-        if self.strategy not in {'copy-then-lossless', 'lossless', 'copy-only', 'compact'}:
+        if self.strategy not in {'copy-then-lossless', 'lossless', 'copy-only', 'compact', 'review-copy'}:
             raise ValueError(f'unknown video strategy: {self.strategy}')
         if self.strategy == 'compact':
             if self.encoder not in {'libx264', 'libx265'}:
@@ -37,7 +37,7 @@ class AudioPolicy:
     codec: str
 
     def __post_init__(self) -> None:
-        if self.codec not in {'source-lossless', 'alac', 'pcm', 'alac-or-pcm'}:
+        if self.codec not in {'source-lossless', 'alac', 'pcm', 'alac-or-pcm', 'copy'}:
             raise ValueError(f'unsupported audio policy: {self.codec}')
 
 
@@ -52,14 +52,16 @@ class ExportPolicy:
     def __post_init__(self) -> None:
         if type(self.schema_version) is not int or type(self.certificate_schema) is not int or self.schema_version != 1 or self.certificate_schema != 2:
             raise ValueError('unsupported export policy schema')
-        if self.mode not in {'compact', 'auto', 'lossless', 'copy-only'}:
+        if self.mode not in {'compact', 'auto', 'lossless', 'copy-only', 'review-copy'}:
             raise ValueError(f'unknown export mode: {self.mode}')
         expected_strategy = {'compact': 'compact', 'auto': 'copy-then-lossless',
-                             'lossless': 'lossless', 'copy-only': 'copy-only'}[self.mode]
+                             'lossless': 'lossless', 'copy-only': 'copy-only', 'review-copy': 'review-copy'}[self.mode]
         if not isinstance(self.video, VideoPolicy) or self.video.strategy != expected_strategy:
             raise ValueError('export mode and video strategy differ')
         if not isinstance(self.audio, AudioPolicy):
             raise ValueError('export audio policy must be typed')
+        if (self.mode == 'review-copy') != (self.audio.codec == 'copy'):
+            raise ValueError('packet-copy audio belongs only to the review-copy policy')
 
     @classmethod
     def compact(cls, *, crf: int = 18, audio: str = 'alac-or-pcm', source_codec: str = 'h264',
@@ -99,6 +101,8 @@ class ExportPolicy:
 
 
 def resolve_policy(mode: str, *, source_codec: str, crf: int = 18, threads: int = 2) -> ExportPolicy:
+    if mode == 'review-copy':
+        return ExportPolicy(mode, VideoPolicy('review-copy'), AudioPolicy('copy'))
     if mode == 'compact':
         return bind_encoder_build(ExportPolicy.compact(crf=crf, source_codec=source_codec, threads=threads))
     strategies = {'auto': 'copy-then-lossless', 'lossless': 'lossless', 'copy-only': 'copy-only'}
@@ -135,6 +139,9 @@ def certificate_policy(certificate: dict, *, source_codec: str) -> ExportPolicy:
     policy = ExportPolicy.from_dict(certificate.get('policy'))
     if certificate.get('policy_digest') != policy_digest(policy):
         raise ValueError('certificate policy digest differs')
-    if policy.mode == 'compact' and certificate.get('video', {}).get('all_native_pixels_equal') is True:
-        raise ValueError('compact certificate cannot claim native pixel equality')
+    if policy.mode in {'compact', 'review-copy'} and certificate.get('video', {}).get('all_native_pixels_equal') is True:
+        raise ValueError(f'{policy.mode} certificate cannot claim native pixel equality')
+    if policy.mode == 'review-copy' and any(a.get('all_samples_equal') is True or a.get('sample_equality') == 'equal'
+                                          for a in certificate.get('audio', [])):
+        raise ValueError('review-copy certificate cannot claim decoded audio sample equality')
     return policy
