@@ -106,7 +106,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == 'batch':
                 from .batch import process_batch
                 result = process_batch(args.inputs, args.output, config, jobs=args.jobs, recursive=args.recursive,
-                                       dry_run=args.dry_run, thumbnails=args.thumbnails, resume=args.resume, mode=args.mode)
+                                       dry_run=args.dry_run, thumbnails=args.thumbnails, resume=args.resume,
+                                       mode=args.mode, progress=sink)
                 code = 1 if result['failed'] else 0
             else:
                 from .workflow import process_video

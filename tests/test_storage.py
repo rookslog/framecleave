@@ -81,3 +81,33 @@ def test_existing_empty_directory_permissions_are_not_changed(tmp_path):
     root.mkdir(mode=0o750)
     with JobDirectory(root):
         assert stat.S_IMODE(root.stat().st_mode) == 0o750
+
+
+def test_batch_records_observed_bytes_and_low_space_event(tmp_path, monkeypatch):
+    from collections import namedtuple
+    from framecleave.batch import process_batch
+    from framecleave.config import Config
+    from framecleave.progress import ProgressReporter
+
+    source = tmp_path / 'source.mp4'
+    source.write_bytes(b'fixture placeholder')
+
+    def fake_process(source, output, config, *, progress, job_id, **options):
+        reporter = ProgressReporter(progress, run_id='worker', job_id=job_id)
+        reporter.emit('job_started', 'starting')
+        output.mkdir()
+        (output / 'artifact').write_bytes(b'x' * 32)
+        reporter.emit('job_finished', 'complete', outcome='success')
+        return {'source': str(source), 'output': str(output), 'status': 'complete'}
+
+    usage = namedtuple('usage', 'total used free')
+    monkeypatch.setattr('framecleave.batch.process_video', fake_process)
+    monkeypatch.setattr('framecleave.progress.shutil.disk_usage', lambda path: usage(100, 99, 1))
+    result = process_batch([source], tmp_path / 'out', Config(), jobs=1, dry_run=True)
+    events = [json.loads(line) for line in (tmp_path / 'out/batch-events.jsonl').read_text().splitlines()]
+    assert result['current_bytes'] > 0
+    assert result['peak_bytes'] >= result['current_bytes']
+    assert result['free_bytes'] == 1
+    assert 'low_disk_space' in {event['event'] for event in events}
+    terminal = next(event for event in events if event['event'] == 'job_finished')
+    assert terminal['observed_bytes'] > 0

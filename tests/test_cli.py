@@ -88,6 +88,32 @@ def test_batch_isolates_failure_and_resumes(source_video,tmp_path):
     assert json.loads(result.stdout)['succeeded'] == 1
 
 
+@pytest.mark.parametrize('jobs', [1, 2])
+def test_batch_events_are_parent_serialized_for_all_job_counts(source_video, tmp_path, jobs):
+    import shutil
+
+    inputs = tmp_path / f'inputs-{jobs}'
+    inputs.mkdir()
+    shutil.copy(source_video, inputs / 'one.mp4')
+    shutil.copy(source_video, inputs / 'two.mp4')
+    output = tmp_path / f'out-{jobs}'
+    result = call_cli('batch', inputs, '-o', output, '--dry-run', '--jobs', jobs, '--json')
+    assert result.returncode == 0, result.stderr
+    lines = (output / 'batch-events.jsonl').read_text().splitlines()
+    events = [json.loads(line) for line in lines]
+    assert {'batch_started', 'job_started', 'job_finished', 'batch_finished'} <= {
+        event['event'] for event in events
+    }
+    assert all('ffmpeg stderr' not in json.dumps(event) for event in events)
+    summary = json.loads((output / 'batch-summary.json').read_text())
+    assert summary['pending'] == 0
+    assert summary['active'] == 0
+    assert summary['succeeded'] == 2
+    assert summary['event_log'] == 'batch-events.jsonl'
+    assert summary['current_bytes'] > 0
+    assert summary['peak_bytes'] >= summary['current_bytes']
+
+
 def test_verify_redecodes_outputs(source_video,tmp_path):
     result=call_cli('split',source_video,'-o',tmp_path/'out','--cuts','7,47','--quiet')
     assert result.returncode == 0,result.stderr
