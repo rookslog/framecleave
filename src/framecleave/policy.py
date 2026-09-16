@@ -139,7 +139,9 @@ def certificate_policy(certificate: dict, *, source_codec: str) -> ExportPolicy:
     policy = ExportPolicy.from_dict(certificate.get('policy'))
     if certificate.get('policy_digest') != policy_digest(policy):
         raise ValueError('certificate policy digest differs')
-    if policy.mode in {'compact', 'review-copy'} and certificate.get('video', {}).get('all_native_pixels_equal') is True:
+    if (policy.mode in {'compact', 'review-copy'} and
+            (certificate.get('video', {}).get('all_native_pixels_equal') is True
+             or (policy.mode == 'review-copy' and certificate.get('video', {}).get('pixel_equality') == 'equal'))):
         raise ValueError(f'{policy.mode} certificate cannot claim native pixel equality')
     if policy.mode == 'review-copy' and any(a.get('all_samples_equal') is True or a.get('sample_equality') == 'equal'
                                           for a in certificate.get('audio', [])):

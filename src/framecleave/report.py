@@ -80,11 +80,16 @@ pre{overflow:auto;font-size:12px}.tag{font-size:13px;border:1px solid #6d7884;bo
                          'Classification alone never removes frames; review audio and neighboring content.</p>')
             parts.append('<details><summary>Uncalibrated transition evidence</summary><pre>' +
                          escape(json.dumps(annotation.get('evidence', {}), indent=2)) + '</pre></details>')
-            parts.append('<p>Copy a command after review (replace JOB):</p><pre>' + escape(
-                f"framecleave plan JOB --transition {scene['number']}=keep -o JOB/export-plan.json\n"
-                f"framecleave plan JOB --transition {scene['number']}=collapse -o JOB/export-plan.json\n"
-                f"framecleave plan JOB --transition {scene['number']}=omit -o JOB/export-plan.json"
-            ) + '</pre>')
+            selected = ','.join(str(s['number']) for s in index['scenes'] if s['number'] != scene['number'])
+            if selected:
+                parts.append('<p>For review-copy jobs only: after listening/reviewing, optionally omit this scene '
+                             'from the final assembly (replace JOB). This never deletes its review clip:</p><pre>' + escape(
+                    f'framecleave assemble JOB/scene-index.json --scenes {selected} -o selected.mp4 --crf 18'
+                ) + '</pre>')
+            parts.append('<p>Automatic omission, transition collapse and keyframe planning are deferred. Default: keep.</p>')
+        if scene.get('output_file'):
+            parts.append(f'<p><a href="{_safe_asset(scene["output_file"])}">Open scene clip</a> · '
+                         'Intended boundaries above may differ from packet-copy preview edges.</p>')
         parts.append('</section>')
     for decision, title in [('cut', 'Accepted boundaries'), ('review', 'Needs review')]:
         parts.append(f'<h2>{title}</h2>')

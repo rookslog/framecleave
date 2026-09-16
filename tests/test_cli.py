@@ -13,7 +13,7 @@ def test_help_version_and_diagnostics():
     result=call_cli('--help')
     assert result.returncode == 0
     assert all(name in result.stdout for name in ['inspect','split','batch','verify','doctor'])
-    assert '0.1.0rc1' in call_cli('--version').stdout
+    assert '0.2.0rc1' in call_cli('--version').stdout
     result=call_cli('doctor','--json')
     assert result.returncode == 0
     assert json.loads(result.stdout)['backend'] == 'software-cpu'
@@ -54,19 +54,19 @@ def test_split_dry_run_cli_and_wrong_cuts(source_video,tmp_path):
 
 
 def test_split_progress_modes_keep_recovered_diagnostics_bounded(source_video, tmp_path):
-    default = call_cli('split', source_video, '-o', tmp_path / 'default', '--cuts', '30,60', '--json')
+    default = call_cli('split', source_video, '-o', tmp_path / 'default', '--cuts', '30,60', '--mode', 'auto', '--json')
     assert default.returncode == 0, default.stderr
     assert 'Non-monotonic DTS' not in default.stderr
     assert 'attempt rejected' not in default.stderr
 
     verbose = call_cli('split', source_video, '-o', tmp_path / 'verbose', '--cuts', '30,60',
-                       '--verbose', '--json')
+                       '--verbose', '--mode', 'auto', '--json')
     assert verbose.returncode == 0, verbose.stderr
     assert 'attempt rejected' in verbose.stderr
     assert 'Non-monotonic DTS' not in verbose.stderr
 
     debug = call_cli('split', source_video, '-o', tmp_path / 'debug', '--cuts', '30,60',
-                     '--debug', '--json')
+                     '--debug', '--mode', 'auto', '--json')
     assert debug.returncode == 0, debug.stderr
     assert 'DEBUG: exec' in debug.stderr
     assert json.loads(debug.stdout)['status'] == 'complete'
@@ -115,11 +115,47 @@ def test_batch_events_are_parent_serialized_for_all_job_counts(source_video, tmp
 
 
 def test_verify_redecodes_outputs(source_video,tmp_path):
-    result=call_cli('split',source_video,'-o',tmp_path/'out','--cuts','7,47','--quiet')
+    result=call_cli('split',source_video,'-o',tmp_path/'out','--cuts','7,47','--mode','auto','--quiet')
     assert result.returncode == 0,result.stderr
     result=call_cli('verify',source_video,tmp_path/'out'/'scene-index.json','--json')
     assert result.returncode == 0,result.stderr
     assert json.loads(result.stdout)['verified']
+
+
+def test_default_cli_copies_review_slices_then_assembles_selection(source_video, tmp_path):
+    job = tmp_path / 'review'
+    result = call_cli('split', source_video, '-o', job, '--cuts', '7,47', '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['policy']['mode'] == 'review-copy'
+    assert not (job / 'scratch').exists()
+    result = call_cli('verify', source_video, job / 'scene-index.json')
+    assert result.returncode == 0, result.stderr
+    assert 'integrity' in result.stdout
+    assert 'samples match' not in result.stdout
+    result = call_cli('assemble', job / 'scene-index.json', '--scenes', '1,3', '-o', tmp_path / 'final.mp4', '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['selected_scene_count'] == 2
+
+
+def test_cli_assembly_selection_rejects_zero_or_ambiguous_job_reference():
+    assert call_cli('assemble', 'one.json', '--scenes', '0', '-o', 'out.mp4').returncode == 2
+    assert call_cli('assemble', 'one.json', 'two.json', '--scenes', '1', '-o', 'out.mp4').returncode == 2
+
+
+@pytest.mark.parametrize('jobs', [1, 2])
+def test_review_batch_reserves_parent_metadata_within_input_budget(source_video, tmp_path, jobs):
+    import shutil
+    inputs = tmp_path / 'inputs'
+    inputs.mkdir()
+    shutil.copy(source_video, inputs / 'one.mp4')
+    shutil.copy(source_video, inputs / 'two.mp4')
+    result = call_cli('batch', inputs, '-o', tmp_path / 'out', '--jobs', jobs, '--json')
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    budget = summary['temporary_storage']
+    assert budget['limit_bytes'] == source_video.stat().st_size * 3
+    assert budget['parent_peak_reserved_bytes'] <= budget['parent_reserve_bytes']
+    assert sum(f['temporary_storage']['limit_bytes'] for f in summary['files']) + budget['parent_reserve_bytes'] == budget['limit_bytes']
 
 
 def test_ctrl_c_releases_lock_and_keeps_a_resumable_state(source_video, tmp_path):

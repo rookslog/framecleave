@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "framecleave"
-version = "0.1.0rc1"
-description = "Local hard-cut detection with decode-verified frame-exact exports"
+version = "0.2.0rc1"
+description = "Local scene detection, compressed review slices, and one final encode"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

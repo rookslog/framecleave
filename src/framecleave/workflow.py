@@ -21,7 +21,9 @@ from .model import SCHEMA_VERSION, read_index, validate_index
 from .policy import ExportPolicy, bind_encoder_build, certificate_policy, policy_digest, resolve_policy
 from .progress import ProgressReporter, ProgressSink
 from .report import make_thumbnails, render_report
-from .storage import JobDirectory, JobLog, atomic_json
+from .review_copy import ReviewCopySession, validate_review_certificate
+from .storage import JobDirectory, JobLog, atomic_json, atomic_write
+from .tempbudget import temporary_budget
 from .transitions import CLASSIFIER_VERSION, annotate_transitions
 
 LOG = logging.getLogger(__name__)
@@ -60,7 +62,7 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                   thumbnails: bool = False, resume: bool = False, mode: str = 'auto',
                   cuts: list[int] | None = None, index_path: Path | None = None,
                   progress: ProgressSink | None = None, job_id: str | None = None,
-                  policy: ExportPolicy | None = None) -> dict:
+                  policy: ExportPolicy | None = None, batch_temp_reserve: int = 0) -> dict:
     if cuts is not None and index_path is not None:
         raise ValueError('Use either explicit frame cuts or an imported index, not both')
     start = time.monotonic()
@@ -77,8 +79,11 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                        resolve_policy(mode, source_codec=info.video['codec_name'], threads=config.threads))
     if resolved_policy.mode != mode:
         raise ValueError('Export policy mode differs from the requested mode')
+    if type(batch_temp_reserve) is not int or batch_temp_reserve < 0:
+        raise ValueError('Batch temporary reserve must be a nonnegative integer')
     request = _request(config, mode, cuts, index_path, resolved_policy)
-    with JobDirectory(directory, resume=resume) as root, JobLog(root):
+    temp_limit = info.path.stat().st_size * 3 // 2 - batch_temp_reserve if mode == 'review-copy' else None
+    with temporary_budget(temp_limit) as temp_budget, JobDirectory(directory, resume=resume) as root, JobLog(root):
         for asset in ['thumbnails', 'scenes', 'scratch', 'certificates', 'scene-index.json', 'state.json']:
             _assert_contained(root, root / asset)
             if (root / asset).is_symlink():
@@ -155,10 +160,7 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                          'warnings': ['Automatic detection may miss edits or split continuous motion; inspect the report.',
                                       'HDR/auxiliary/interlaced export support is deliberately restricted.']}
                 # Compact, private per-frame diagnostics support reproducible error investigation.
-                with tempfile.NamedTemporaryFile(prefix='.metrics-', dir=root, delete=False) as handle:
-                    temporary = Path(handle.name)
-                    np.savez_compressed(handle, metrics=analysis.metrics)
-                temporary.replace(root / 'analysis-metrics.npz')
+                atomic_write(root / 'analysis-metrics.npz', lambda handle: np.savez_compressed(handle, metrics=analysis.metrics))
             validate_index(index)
             if not (resume and index_file.exists()):
                 reporter.emit('transitions_started', 'classifying')
@@ -179,8 +181,11 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                     _assert_contained(root, root / name)
                     if (root / name).is_symlink():
                         raise ValueError(f'Job subdirectory must not be a symlink: {name}')
-                with ExportSession(info, timeline, root / 'scratch', threads=config.threads, mode=mode,
-                                   reporter=reporter, diagnostics='diagnostics.log', policy=resolved_policy) as session:
+                exporter = (ReviewCopySession(info, timeline, reporter=reporter, policy=resolved_policy)
+                            if mode == 'review-copy' else
+                            ExportSession(info, timeline, root / 'scratch', threads=config.threads, mode=mode,
+                                          reporter=reporter, diagnostics='diagnostics.log', policy=resolved_policy))
+                with exporter as session:
                     for scene in index['scenes']:
                         key = str(scene['number'])
                         relative = f"scenes/{scene['number']:04d}{output_suffix(info, timeline, scene, mode)}"
@@ -201,10 +206,12 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                                     or certificate.get('policy_digest') != policy_digest(resolved_policy)):
                                 raise ValueError(f'Previously verified scene {key} has a changed certificate policy')
                             video = certificate.get('video', {})
+                            if mode == 'review-copy':
+                                validate_review_certificate(certificate, info, timeline, scene, state['segmentation_sha256'])
                             if (certificate.get('output_sha256') != old['sha256']
                                     or video.get('first_source_frame') != scene['start_frame']
                                     or video.get('last_source_frame') != scene['end_frame'] - 1
-                                    or video.get('frames_verified') != scene['frame_count']):
+                                    or (mode != 'review-copy' and video.get('frames_verified') != scene['frame_count'])):
                                 raise ValueError(f'Previously verified scene {key} has an inconsistent certificate')
                             scene['output_file'] = relative
                             scene['export'] = old['certificate']
@@ -214,6 +221,8 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                             raise FileExistsError(f'Uncertified output exists; it will not be overwritten: {target}')
                         LOG.info('%s: scene %s [%d, %d)', info.path.name, key, scene['start_frame'], scene['end_frame'])
                         certificate = session.export(scene, target)
+                        if mode == 'review-copy':
+                            certificate['segmentation_sha256'] = state['segmentation_sha256']
                         cert_relative = f'certificates/{scene["number"]:04d}.json'
                         atomic_json(root / cert_relative, certificate)
                         scene['output_file'] = relative
@@ -237,9 +246,16 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
             atomic_json(state_path, state)
             result = {'source': str(info.path), 'output': str(root), 'status': status,
                       'scene_count': len(index['scenes']), 'review_candidates': sum(b['decision'] == 'review' for b in index['boundaries']),
-                      'frame_count': timeline.frame_count, 'exported': exported, 'skipped_verified': skipped,
+                      'frame_count': timeline.frame_count, 'exported': exported,
+                      'skipped_verified': skipped if mode != 'review-copy' else 0,
+                      'skipped_integrity_checked': skipped if mode == 'review-copy' else 0,
                       'wall_seconds': state['wall_seconds'], 'policy': resolved_policy.to_dict(),
                       'policy_digest': policy_digest(resolved_policy)}
+            if temp_budget:
+                result['temporary_storage'] = {'limit_bytes': temp_budget.limit,
+                                               'peak_reserved_bytes': temp_budget.peak_bytes,
+                                               'batch_parent_reserve_bytes': batch_temp_reserve,
+                                               'scope': 'owned-logical-temporary-bytes; published assets/logs excluded'}
             atomic_json(root / 'run-summary.json', result)
             reporter.emit('job_finished', 'complete', completed=len(index['scenes']),
                           total=len(index['scenes']), unit='scenes', outcome='success')
@@ -255,7 +271,7 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
 
 
 def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
-    """Re-decode every exported frame and PCM slice; do not trust the old certificate."""
+    """Check the recorded policy: review integrity/inventory or explicit exact decode."""
     index = read_index(index_path)
     timeline = validate_index(index)
     info = probe(source)
@@ -265,13 +281,17 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
     results = []
     policies = []
     methods = {}
+    certificates = {}
     current_encoder_build = None
     for scene in index['scenes']:
         if not scene.get('export'):
             raise ValueError('Cannot verify a scene without an export certificate')
         certificate_path = root / scene['export']
         _assert_contained(root, certificate_path)
+        if certificate_path.is_symlink():
+            raise ValueError('Certificate must not be a symlink')
         certificate = json.loads(certificate_path.read_text(encoding='utf-8'))
+        certificates[scene['number']] = certificate
         methods[scene['number']] = certificate.get('method')
         if certificate.get('method') == 'compact-reencode':
             current_encoder_build = current_encoder_build or ffmpeg_build_fingerprint()
@@ -281,6 +301,26 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
     if len({policy_digest(policy) for policy in policies}) != 1:
         raise ValueError('Job certificates carry inconsistent export policies')
     policy = policies[0]
+    if policy.mode == 'review-copy':
+        with ReviewCopySession(info, timeline, policy=policy) as session:
+            for scene in index['scenes']:
+                certificate = certificates[scene['number']]
+                validate_review_certificate(certificate, info, timeline, scene, _segmentation_digest(index))
+                if not scene.get('output_file'):
+                    raise ValueError('Cannot verify an unexported scene')
+                path = root / scene['output_file']
+                _assert_contained(root, path)
+                if path.is_symlink():
+                    raise ValueError('Review clip must not be a symlink')
+                output = probe(path)
+                if output.sha256 != certificate.get('output_sha256'):
+                    raise ValueError('Review output digest differs')
+                video, audio = session.inspect_output(output)
+                results.append({'scene': scene['number'], 'video': video, 'audio': audio})
+        return {'verified': True, 'scene_count': len(results), 'scenes': results,
+                'policy': policy.to_dict(), 'policy_digest': policy_digest(policy),
+                'verification_scope': 'file-integrity-and-stream-inventory',
+                'pixel_equality': 'not_applicable', 'audio_sample_equality': 'not_applicable'}
     with tempfile.TemporaryDirectory(prefix='framecleave-verify-') as temporary:
         with ExportSession(info, timeline, Path(temporary), threads=threads, mode=policy.mode, policy=policy) as session:
             for scene in index['scenes']:

@@ -10,17 +10,43 @@ from fractions import Fraction
 import logging
 import os
 from pathlib import Path
-import signal
-import subprocess
-import sys
+import threading
 import time
 
+from .limited_process import run_limited
 from .media import MediaError, MediaInfo, executable, probe, sha256_file
 from .model import Timeline, rational
-from .policy import ExportPolicy, policy_digest, resolve_policy
+from .policy import ExportPolicy, certificate_policy, policy_digest, resolve_policy
 from .progress import ProgressReporter, ProgressSink
+from .tempbudget import Reservation, available_temp
 
 LOG = logging.getLogger(__name__)
+
+
+def intended_range(info: MediaInfo, timeline: Timeline, scene: dict) -> dict:
+    a, b = scene['start_frame'], scene['end_frame']
+    start, end = (timeline.endpoint(n) * timeline.time_base for n in (a, b))
+    raw_origin = info.document.get('format', {}).get('start_time')
+    origin = (timeline.pts[0] * timeline.time_base if raw_origin in {None, 'N/A'}
+              else Fraction(raw_origin))
+    return {'start_frame': a, 'end_frame': b, 'start_time_rational': rational(start),
+            'end_time_rational': rational(end), 'duration_rational': rational(end-start),
+            'input_seek_rational': rational(start-origin)}
+
+
+def validate_review_certificate(certificate: dict, info: MediaInfo, timeline: Timeline,
+                               scene: dict, segmentation_digest: str) -> None:
+    policy = certificate_policy(certificate, source_codec=info.video['codec_name'])
+    video = certificate.get('video', {})
+    if (policy.mode != 'review-copy' or certificate.get('source_sha256') != info.sha256
+            or certificate.get('segmentation_sha256') != segmentation_digest
+            or certificate.get('source_range') != intended_range(info, timeline, scene)
+            or video.get('first_source_frame') != scene['start_frame']
+            or video.get('last_source_frame') != scene['end_frame'] - 1
+            or video.get('requested_frame_count') != scene['frame_count']
+            or video.get('pixel_equality') != 'not_applicable'
+            or 'frames_verified' in video):
+        raise ValueError('Review certificate source, segmentation, intended range or verification scope differs')
 
 
 class ReviewCopySession:
@@ -35,8 +61,9 @@ class ReviewCopySession:
         ceiling = info.path.stat().st_size * 3 // 2
         if max_temp_bytes is not None and (type(max_temp_bytes) is not int or not 0 < max_temp_bytes <= ceiling):
             raise ValueError('Temporary media budget must be positive and no larger than 1.5× input bytes')
-        self.max_temp_bytes = ceiling if max_temp_bytes is None else max_temp_bytes
+        self.max_temp_bytes = available_temp(ceiling if max_temp_bytes is None else max_temp_bytes)
         self.progress = reporter or ProgressReporter(progress)
+        self._export_lock = threading.Lock()
 
     def __enter__(self) -> 'ReviewCopySession':
         return self
@@ -45,34 +72,7 @@ class ReviewCopySession:
         pass  # Each export owns and releases its partial file, including on interruption.
 
     def _run_copy(self, command: list[str], partial: Path) -> int:
-        wrapper = [sys.executable, '-m', 'framecleave.limited_process', str(self.max_temp_bytes), '--', *command]
-        LOG.debug('review-copy command: %r', command)
-        process = subprocess.Popen(wrapper, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                   env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
-        tail = bytearray()
-        diagnostics_bytes = 0
-        try:
-            assert process.stderr is not None
-            while block := process.stderr.read(4096):
-                diagnostics_bytes += len(block)
-                tail.extend(block)
-                del tail[:-6000]
-            code = process.wait()
-            if tail:
-                LOG.debug('review-copy diagnostics%s: %s',
-                          ' [tail truncated]' if diagnostics_bytes > len(tail) else '',
-                          tail.decode('utf-8', 'replace'))
-            if code:
-                if code == -getattr(signal, 'SIGXFSZ', 25) or (partial.exists() and partial.stat().st_size >= self.max_temp_bytes):
-                    raise MediaError(f'Temporary media budget exceeded ({self.max_temp_bytes} bytes); no re-encoding attempted')
-                raise MediaError(f'FFmpeg stream-copy failed ({code}); no re-encoding attempted; consult private diagnostics')
-            return diagnostics_bytes
-        finally:
-            if process.poll() is None:
-                process.kill()
-            process.wait()
-            if process.stderr:
-                process.stderr.close()
+        return run_limited(command, partial, self.max_temp_bytes, label='stream-copy')
 
     def inspect_output(self, output: MediaInfo) -> tuple[dict, list[dict]]:
         """Compare stream inventory, not decoded pixels, samples, or exact boundaries."""
@@ -95,6 +95,14 @@ class ReviewCopySession:
                 'decode_success': 'not_checked', 'boundary_accuracy': 'packet-copy-preview'}, audio
 
     def export(self, scene: dict, target: Path) -> dict:
+        if not self._export_lock.acquire(blocking=False):
+            raise ValueError('Review session already has an active export')
+        try:
+            return self._export(scene, target)
+        finally:
+            self._export_lock.release()
+
+    def _export(self, scene: dict, target: Path) -> dict:
         a, b = scene['start_frame'], scene['end_frame']
         if type(a) is not int or type(b) is not int or not 0 <= a < b <= self.timeline.frame_count:
             raise ValueError('Review interval must be a nonempty source frame range')
@@ -107,14 +115,14 @@ class ReviewCopySession:
         target.parent.mkdir(parents=True, exist_ok=True)
         start = self.timeline.endpoint(a) * self.timeline.time_base
         end = self.timeline.endpoint(b) * self.timeline.time_base
-        source_origin = Fraction(self.info.document.get('format', {}).get('start_time',
-                                str(self.timeline.pts[0] * self.timeline.time_base)))
-        seek = start - source_origin
+        source_range = intended_range(self.info, self.timeline, scene)
+        seek = Fraction(source_range['input_seek_rational'])
         scene_id = str(scene['number'])
         started = time.monotonic()
         self.progress.emit('scene_started', 'remuxing', scene_id=scene_id)
         self.progress.emit('attempt_started', 'remuxing', scene_id=scene_id, attempt_id='audiovisual-copy')
         owned = False
+        reservation = Reservation(self.max_temp_bytes)
         try:
             # Exclusive creation establishes ownership before the writer may use -y.
             descriptor = os.open(partial, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -149,9 +157,7 @@ class ReviewCopySession:
             video.update(first_source_frame=a, last_source_frame=b-1, requested_frame_count=b-a)
             result = {'schema_version': 2, 'method': method, 'source_sha256': self.info.sha256,
                       'policy': self.policy.to_dict(), 'policy_digest': policy_digest(self.policy),
-                      'source_range': {'start_frame': a, 'end_frame': b,
-                                       'start_time_rational': rational(start), 'end_time_rational': rational(end),
-                                       'duration_rational': rational(end-start), 'input_seek_rational': rational(seek)},
+                      'source_range': source_range,
                       'video': video, 'audio': audio, 'output_sha256': sha256_file(partial),
                       'output_size_bytes': partial.stat().st_size, 'wall_seconds': time.monotonic()-started,
                       'temp_media_limit_bytes': self.max_temp_bytes,
@@ -168,3 +174,4 @@ class ReviewCopySession:
         finally:
             if owned:
                 partial.unlink(missing_ok=True)
+            reservation.close()

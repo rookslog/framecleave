@@ -83,3 +83,25 @@ def test_default_tty_line_never_exceeds_width():
                     scene_id="123", completed=12, total=38))
     line = stream.getvalue().split("\r")[-1]
     assert len(line) <= 36
+
+
+def test_batch_tty_shows_aggregate_counts_not_only_last_worker():
+    stream = FakeTTY()
+    sink = TerminalProgressSink(stream, OutputMode.DEFAULT, is_tty=True, width=100, clock=FakeClock())
+    sink.emit(event('batch_started', total=3, completed=0))
+    sink.emit(event('job_started', job_id='one'))
+    sink.emit(event('job_started', job_id='two'))
+    sink.emit(event('job_finished', phase='complete', job_id='one', outcome='success'))
+    line = stream.getvalue().split('\r')[-1]
+    assert '[1/3]' in line
+    assert 'active 1' in line
+    assert 'pending 1' in line
+
+
+def test_narrow_status_drops_private_filename_before_phase_and_elapsed():
+    stream = FakeTTY()
+    sink = TerminalProgressSink(stream, OutputMode.DEFAULT, is_tty=True, width=36, clock=FakeClock())
+    sink.emit(event('scene_started', phase='remuxing', job_id='a' * 100, scene_id='2'))
+    line = stream.getvalue().split('\r')[-1]
+    assert 'remuxing' in line
+    assert '00:00' in line

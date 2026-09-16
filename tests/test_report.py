@@ -39,14 +39,15 @@ def test_thumbnails_use_exact_ordinals(source_video, tmp_path):
 def test_report_displays_transition_evidence_and_copyable_review_commands(tmp_path):
     from framecleave.report import render_report
 
-    timeline = Timeline([0, 40, 80], [40, 40, 40], [0], Fraction(1, 1000))
-    scenes = timeline.scenes([1])
-    scenes[1]['transition'] = {'classification': 'ambiguous', 'source_range': [1, 3],
+    timeline = Timeline([0, 40, 80, 120], [40, 40, 40, 40], [0], Fraction(1, 1000))
+    scenes = timeline.scenes([1, 2])
+    scenes[1]['transition'] = {'classification': 'ambiguous', 'source_range': [1, 2],
                                'evidence': {'audio': '<speech>'}}
     index = {'source': {'display_name': 'Generated'}, 'scenes': scenes, 'boundaries': []}
     render_report(index, tmp_path)
     text = (tmp_path / 'report.html').read_text()
     assert 'ambiguous transition' in text
     assert '&lt;speech&gt;' in text
-    assert '--transition 2=omit' in text
+    assert '--scenes 1,3' in text
+    assert 'framecleave plan' not in text
     assert '<script' not in text

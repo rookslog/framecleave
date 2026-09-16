@@ -163,6 +163,7 @@ class BatchStatus:
     peak_bytes: int = 0
     free_bytes: int | None = None
     _terminal_jobs: set[str] = field(default_factory=set, repr=False)
+    _successful_jobs: set[str] = field(default_factory=set, repr=False)
 
     def __post_init__(self) -> None:
         if type(self.total) is not int or self.total < 0:
@@ -175,10 +176,14 @@ class BatchStatus:
             self.recovered_fallbacks += 1
         if not job_id:
             return
+        if event.event == 'worker_lost' and job_id in self._successful_jobs:
+            self._successful_jobs.remove(job_id)
+            self.succeeded -= 1
+            self.failed += 1
         if event.event == "job_started" and job_id not in self.active_phases and job_id not in self._terminal_jobs:
             self.pending = max(0, self.pending - 1)
             self.active += 1
-        if job_id not in self._terminal_jobs:
+        if job_id not in self._terminal_jobs and event.event not in {"job_finished", "job_failed", "worker_lost"}:
             self.active_phases[job_id] = event.phase
         if event.event in {"job_finished", "job_failed", "worker_lost"} and job_id not in self._terminal_jobs:
             self._terminal_jobs.add(job_id)
@@ -189,6 +194,7 @@ class BatchStatus:
                 self.pending = max(0, self.pending - 1)
             if event.event == "job_finished":
                 self.succeeded += 1
+                self._successful_jobs.add(job_id)
             elif event.reason_code == "interrupted":
                 self.interrupted += 1
             else:
@@ -237,12 +243,15 @@ class ProgressCoordinator:
 
     _STOP = {"framecleave_control": "stop"}
 
-    def __init__(self, transport, sinks, *, total: int, root: Path, status_path: Path) -> None:
+    def __init__(self, transport, sinks, *, total: int, root: Path, status_path: Path, temp_budget=None,
+                 input_temp_limit: int | None = None) -> None:
         self.transport = transport
         self.sink = CompositeProgressSink(sinks)
         self.status = BatchStatus(total)
         self.root = Path(root)
         self.status_path = Path(status_path)
+        self.temp_budget = temp_budget
+        self.input_temp_limit = input_temp_limit
         self.results: list[dict] = []
         self.lock = threading.Lock()
         self.error: BaseException | None = None
@@ -255,6 +264,7 @@ class ProgressCoordinator:
         self._accept(event)
 
     def record_result(self, result: dict) -> None:
+        self.check_health()
         with self.lock:
             self.results.append(result)
             self._observe_storage()
@@ -265,15 +275,22 @@ class ProgressCoordinator:
             return self._summary()
 
     def close(self, result: dict | None = None) -> None:
-        self.drain()
-        self.sink.close(result)
+        try:
+            self.drain()
+        finally:
+            self.sink.close(result)
+
+    def check_health(self) -> None:
+        if self.error is not None:
+            raise RuntimeError('Batch progress persistence failed; see original storage error') from self.error
 
     def drain(self) -> None:
         if self.thread.is_alive():
             self.transport.put(dict(self._STOP))
-            self.thread.join()
-        if self.error is not None:
-            raise RuntimeError("invalid worker progress event") from self.error
+            self.thread.join(timeout=5)
+            if self.thread.is_alive():
+                raise RuntimeError('Progress transport did not close within five seconds; batch state is incomplete')
+        self.check_health()
 
     def _drain(self) -> None:
         try:
@@ -281,7 +298,13 @@ class ProgressCoordinator:
                 payload = self.transport.get()
                 if payload == self._STOP:
                     return
-                self._accept(ProgressEvent.from_dict(payload))
+                # Keep consuming after persistence failure so worker queue feeders
+                # can flush during cancellation. Root observes and rethrows error.
+                if self.error is None:
+                    try:
+                        self._accept(ProgressEvent.from_dict(payload))
+                    except BaseException as exc:
+                        self.error = exc
         except BaseException as exc:
             self.error = exc
 
@@ -321,12 +344,19 @@ class ProgressCoordinator:
             processed=len(self.results),
             files=sorted(self.results, key=lambda item: item["source"]),
         )
+        if self.temp_budget is not None:
+            value['temporary_storage'] = {'limit_bytes': self.input_temp_limit,
+                                          'parent_reserve_bytes': self.temp_budget.limit,
+                                          'parent_peak_reserved_bytes': self.temp_budget.peak_bytes,
+                                          'scope': 'owned-logical-temporary-bytes; published assets/logs excluded'}
         return value
 
     def _persist(self) -> None:
         from .storage import atomic_json
+        from .tempbudget import temporary_budget
 
-        atomic_json(self.status_path, self._summary())
+        with temporary_budget(self.temp_budget):
+            atomic_json(self.status_path, self._summary())
 
 
 class JsonlProgressSink:

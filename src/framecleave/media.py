@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import deque
+from contextlib import ExitStack
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
@@ -17,6 +18,8 @@ import tempfile
 from typing import Iterator
 
 import numpy as np
+
+from .tempbudget import reserve_temp
 
 LOG = logging.getLogger(__name__)
 
@@ -172,12 +175,18 @@ def iter_video(
         if not selected:
             return
     filters = f"scale={width}:{height}:flags=area,format=rgb24,showinfo"
-    temporary = tempfile.TemporaryDirectory(prefix="framecleave-filter-")
-    script = Path(temporary.name) / "filter.txt"
     if selected is not None:
         expression = selection_expression(selected)
         filters = f"select='{expression}'," + filters
-    script.write_text(filters, encoding="utf-8")
+    resources = ExitStack()
+    try:
+        resources.enter_context(reserve_temp(len(filters.encode('utf-8'))))
+        temporary = resources.enter_context(tempfile.TemporaryDirectory(prefix="framecleave-filter-"))
+        script = Path(temporary) / 'filter.txt'
+        script.write_text(filters, encoding="utf-8")
+    except BaseException:
+        resources.close()
+        raise
     command = ffmpeg_base(level="info") + [
         "-err_detect", "explode", "-threads", str(threads),
         "-protocol_whitelist", "file,pipe,crypto", "-copyts", "-noautorotate", "-i", str(info.path),
@@ -188,7 +197,11 @@ def iter_video(
     if selected is not None:
         command[-1:-1] = ["-frames:v", str(len(selected))]
     LOG.debug("exec %s", json.dumps(command))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except BaseException:
+        resources.close()
+        raise
     metadata: queue.Queue = queue.Queue()
     errors: deque[str] = deque(maxlen=30)
     bases: list[Fraction] = []
@@ -253,7 +266,7 @@ def iter_video(
         worker.join(timeout=5)
         if process.stderr:
             process.stderr.close()
-        temporary.cleanup()
+        resources.close()
 
 
 def video_hashes(info: MediaInfo, *, threads: int = 2) -> list[dict]:

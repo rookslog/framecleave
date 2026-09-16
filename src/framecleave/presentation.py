@@ -6,7 +6,7 @@ from enum import Enum
 import shutil
 import time
 
-from .progress import ProgressEvent
+from .progress import BatchStatus, ProgressEvent
 
 
 class OutputMode(str, Enum):
@@ -42,9 +42,14 @@ class TerminalProgressSink:
         self.last_event: ProgressEvent | None = None
         self.recovered_fallbacks = 0
         self.line_active = False
+        self.batch: BatchStatus | None = None
 
     def emit(self, event: ProgressEvent) -> None:
         self.last_event = event
+        if event.event == 'batch_started':
+            self.batch = BatchStatus(event.total or 0)
+        if self.batch:
+            self.batch.apply(event)
         if event.recovered:
             self.recovered_fallbacks += 1
         if self.mode is OutputMode.QUIET:
@@ -71,18 +76,21 @@ class TerminalProgressSink:
 
     def _format_status(self, event: ProgressEvent) -> str:
         parts = []
-        if event.completed is not None and event.total is not None:
+        if self.batch:
+            done = self.batch.succeeded + self.batch.failed + self.batch.interrupted
+            parts += [f'[{done}/{self.batch.total}]', f'active {self.batch.active}', f'pending {self.batch.pending}']
+        elif event.completed is not None and event.total is not None:
             parts.append(f"[{event.completed}/{event.total}]")
-        if event.job_id:
-            parts.append(event.job_id)
         parts.append(event.phase)
-        if event.scene_id:
-            parts.append(f"scene {event.scene_id}")
         elapsed = event.elapsed_seconds if event.elapsed_seconds is not None else self.clock() - self.started
         minutes, seconds = divmod(max(0, int(elapsed)), 60)
         parts.append(f"{minutes:02d}:{seconds:02d}")
-        if self.recovered_fallbacks:
-            parts.append(f"fallbacks {self.recovered_fallbacks}")
+        optional = ([f'fallbacks {self.recovered_fallbacks}'] if self.recovered_fallbacks else [])
+        optional += ([f'scene {event.scene_id}'] if event.scene_id else [])
+        optional += ([event.job_id] if event.job_id else [])
+        for item in optional:
+            if len(' · '.join([*parts, item])) <= self.width:
+                parts.append(item)
         return " · ".join(parts)[: self.width]
 
     def _format_event(self, event: ProgressEvent) -> str:

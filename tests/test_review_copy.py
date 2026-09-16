@@ -29,6 +29,9 @@ def test_review_copy_policy_binds_packet_audio_and_rejects_false_equality_claims
             'video': {'all_native_pixels_equal': True}}
     with pytest.raises(ValueError, match='cannot claim'):
         certificate_policy(cert, source_codec='h264')
+    cert['video'] = {'pixel_equality': 'equal'}
+    with pytest.raises(ValueError, match='cannot claim'):
+        certificate_policy(cert, source_codec='h264')
 
 
 def packet_hashes(path):

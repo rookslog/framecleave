@@ -113,6 +113,49 @@ def test_batch_status_tracks_active_terminal_and_recovered_counts():
     assert value['event_log'] == 'batch-events.jsonl'
 
 
+def test_worker_lost_before_a_start_event_retires_pending_job():
+    status = BatchStatus(1)
+    status.apply(ProgressEvent(run_id='r', event='worker_lost', phase='failed', sequence=0,
+                              job_id='lost', outcome='failed'))
+    assert status.pending == 0
+    assert status.active == 0
+    assert status.failed == 1
+
+
+def test_worker_exit_after_finished_event_is_an_unconfirmed_failure():
+    status = BatchStatus(1)
+    for number, name in enumerate(['job_started', 'job_finished', 'worker_lost']):
+        status.apply(ProgressEvent(run_id='r', event=name, phase='failed', sequence=number,
+                                  job_id='lost', outcome='failed' if name == 'worker_lost' else None))
+    assert status.succeeded == 0
+    assert status.failed == 1
+    assert status.pending == 0
+
+
+def test_progress_write_error_still_drains_transport_and_closes_sinks(tmp_path):
+    from framecleave.progress import ProgressCoordinator
+
+    class RefusingSink:
+        closed = False
+
+        def emit(self, event):
+            raise OSError('injected disk write error')
+
+        def close(self, result=None):
+            self.closed = True
+
+    transport = queue.Queue()
+    sink = RefusingSink()
+    coordinator = ProgressCoordinator(transport, [sink], total=1, root=tmp_path, status_path=tmp_path / 'status')
+    coordinator.start()
+    transport.put(_event('job_started').to_dict())
+    transport.put(_event('job_finished').to_dict())
+    with pytest.raises(RuntimeError):
+        coordinator.close()
+    assert transport.empty()
+    assert sink.closed
+
+
 def test_batch_synthesizes_worker_lost_when_result_has_no_terminal_event(tmp_path, monkeypatch):
     from framecleave.batch import process_batch
     from framecleave.config import Config

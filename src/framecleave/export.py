@@ -35,6 +35,8 @@ def whole_scene(scene: dict, timeline: Timeline) -> bool:
 def output_suffix(info: MediaInfo, timeline: Timeline, scene: dict, mode: str = "auto") -> str:
     if whole_scene(scene, timeline) and mode != "lossless":
         return info.path.suffix.lower() or ".mkv"
+    if mode == 'review-copy':
+        return '.mp4'
     return ".mkv" if info.video["codec_name"] == "ffv1" else ".mov"
 
 
