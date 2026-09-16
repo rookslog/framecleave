@@ -28,7 +28,7 @@ def test_update_context_is_not_diluted_by_duplicate_frames():
 
 
 def test_temporal_detects_equal_histogram_hard_cut():
-    from framecleave.detector import frame_metrics, decide, geometry
+    from framecleave.detector import decide
     rng = np.random.default_rng(321)
     a = cv2.GaussianBlur(rng.integers(0, 255, (96, 128, 3), dtype=np.uint8), (5, 5), 0)
     b = a[::-1, ::-1].copy()
