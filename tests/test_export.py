@@ -1,5 +1,3 @@
-from pathlib import Path
-from fractions import Fraction
 import subprocess
 
 import pytest
@@ -121,3 +119,93 @@ def test_two_audio_streams_keep_distinct_sample_clocks_and_offsets(tmp_path):
         result=session.export(timeline.scenes([3,40])[1],tmp_path/'multi-cut.mov')
     assert len(result['audio']) == 2
     assert all(x['all_samples_equal'] for x in result['audio'])
+
+
+def test_hevc_ten_bit_and_colour_are_preserved(tmp_path):
+    from framecleave.export import ExportSession
+    path=tmp_path/'ten.mkv'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=160x120:rate=30:duration=1',
+                    '-vf','format=yuv420p10le','-c:v','libx265','-threads','1',
+                    '-x265-params','pools=1:frame-threads=1:log-level=error',
+                    '-color_primaries','bt709','-colorspace','bt709','-color_trc','bt709',str(path)],check=True)
+    info,timeline=timeline_from_source(path)
+    with ExportSession(info,timeline,tmp_path/'work') as session:
+        result=session.export(timeline.scenes([3,17])[1],tmp_path/'ten-cut.mov')
+    assert result['video']['all_native_pixels_equal']
+    assert result['video']['preserved_attributes']['pix_fmt'] == 'yuv420p10le'
+
+
+def test_hdr_reencoding_is_refused_without_creating_output(tmp_path):
+    from framecleave.export import ExportSession
+    from framecleave.media import PreservationError
+    path=tmp_path/'hdr.mkv'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=128x96:rate=30:duration=1',
+                    '-vf','setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc','-c:v','libx264','-threads','1',str(path)],check=True)
+    info,timeline=timeline_from_source(path)
+    assert info.video['color_transfer'] == 'smpte2084'
+    with ExportSession(info,timeline,tmp_path/'work') as session:
+        with pytest.raises(PreservationError,match='HDR'):
+            session.export(timeline.scenes([3,17])[1],tmp_path/'out.mov')
+    assert not (tmp_path/'out.mov').exists()
+
+
+def test_rotation_orientation_is_preserved_without_rotating_pixels(source_video,tmp_path):
+    from framecleave.export import ExportSession
+    path=tmp_path/'rotated.mov'
+    subprocess.run(['ffmpeg','-v','error','-display_rotation','90','-i',str(source_video),'-c','copy',str(path)],check=True)
+    info,timeline=timeline_from_source(path)
+    assert any('rotation' in x for x in info.video.get('side_data_list',[]))
+    with ExportSession(info,timeline,tmp_path/'work') as session:
+        result=session.export(timeline.scenes([7,47])[1],tmp_path/'rot-cut.mov')
+    assert result['video']['all_native_pixels_equal']
+    assert result['video']['preserved_attributes']['rotation']
+
+
+def test_b_frame_key_aligned_copy_does_not_publish_unverified_frames(source_video,tmp_path):
+    from framecleave.export import ExportSession
+    info,timeline=timeline_from_source(source_video)
+    with ExportSession(info,timeline,tmp_path/'work') as session:
+        result=session.export(timeline.scenes([30,60])[1],tmp_path/'aligned.mov')
+    assert result['video']['frames_verified'] == 30
+    assert result['video']['all_native_pixels_equal']
+
+
+def test_actual_open_gop_boundaries_are_verified_not_assumed(tmp_path):
+    from framecleave.export import ExportSession
+    path = tmp_path / 'open-gop.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x120:rate=30:duration=3',
+                    '-c:v', 'libx264', '-threads', '1', '-x264-params',
+                    'open-gop=1:keyint=24:min-keyint=24:scenecut=0:bframes=3:b-pyramid=normal', str(path)], check=True)
+    info, timeline = timeline_from_source(path)
+    assert 24 in timeline.keyframes
+    with ExportSession(info, timeline, tmp_path / 'work') as session:
+        result = session.export(timeline.scenes([24, 48])[1], tmp_path / 'open-gop-cut.mov')
+    assert result['video']['all_native_pixels_equal']
+    assert result['video']['frames_verified'] == 24
+    assert result['video']['first_source_frame'] == 24
+    assert result['video']['last_source_frame'] == 47
+
+
+def test_ffv1_arbitrary_frame_cut_preserves_native_pixels(tmp_path):
+    from framecleave.export import ExportSession
+    path = tmp_path / 'lossless.mkv'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=128x96:rate=30:duration=1',
+                    '-c:v', 'ffv1', '-threads', '1', str(path)], check=True)
+    info, timeline = timeline_from_source(path)
+    with ExportSession(info, timeline, tmp_path / 'work', mode='lossless') as session:
+        result = session.export(timeline.scenes([7, 19])[1], tmp_path / 'cut.mkv')
+    assert result['video']['all_native_pixels_equal']
+    assert result['video']['all_pts_equal']
+    assert result['video']['frames_verified'] == 12
+
+
+def test_property_verifier_rejects_a_changed_video_codec(source_video):
+    from copy import deepcopy
+    from dataclasses import replace
+    from framecleave.export import compare_properties
+    from framecleave.media import PreservationError, probe
+    source = probe(source_video)
+    output = replace(source, document=deepcopy(source.document))
+    output.video['codec_name'] = 'hevc'
+    with pytest.raises(PreservationError, match='codec_name'):
+        compare_properties(source, output)

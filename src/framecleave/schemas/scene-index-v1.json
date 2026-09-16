@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FrameCleave scene index version 1",
+  "description": "Half-open decoded frame ordinals. PTS are in the source rational time base. The Python validator additionally enforces exact partition and cross-field arithmetic.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool_version",
+    "interval_semantics",
+    "source",
+    "timeline",
+    "scenes",
+    "boundaries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tool_version": {
+      "type": "string"
+    },
+    "interval_semantics": {
+      "const": "decoded-frames-half-open"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "frame_count"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "frame_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "path": {
+          "type": "string"
+        },
+        "streams": {
+          "type": "array"
+        }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "required": [
+        "time_base",
+        "pts",
+        "durations",
+        "keyframes"
+      ],
+      "properties": {
+        "time_base": {
+          "$ref": "#/$defs/rational"
+        },
+        "pts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "durations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "keyframes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/scene"
+      }
+    },
+    "boundaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "frame",
+          "pts",
+          "decision"
+        ],
+        "properties": {
+          "frame": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pts": {
+            "type": "integer"
+          },
+          "decision": {
+            "enum": [
+              "cut",
+              "review"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "rational": {
+      "type": "string",
+      "pattern": "^-?[0-9]+/[1-9][0-9]*$"
+    },
+    "scene": {
+      "type": "object",
+      "required": [
+        "number",
+        "start_frame",
+        "end_frame",
+        "last_frame",
+        "frame_count",
+        "start_pts",
+        "end_pts",
+        "start_time_rational",
+        "end_time_rational",
+        "duration_rational",
+        "start_relative",
+        "end_relative"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "frame_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_frame": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "start_frame": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_frame": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "start_pts": {
+          "type": "integer"
+        },
+        "end_pts": {
+          "type": "integer"
+        },
+        "start_time_rational": {
+          "$ref": "#/$defs/rational"
+        },
+        "end_time_rational": {
+          "$ref": "#/$defs/rational"
+        },
+        "duration_rational": {
+          "$ref": "#/$defs/rational"
+        },
+        "start_relative": {
+          "type": "string"
+        },
+        "end_relative": {
+          "type": "string"
+        },
+        "output_file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thumbnails": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

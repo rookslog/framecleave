@@ -50,3 +50,30 @@ def test_inspection_can_be_promoted_to_export(source_video, tmp_path):
     process_video(source_video, out, Config(), dry_run=True, cuts=[7])
     result = process_video(source_video, out, Config(), resume=True, cuts=[7])
     assert result['exported'] == 2
+
+
+def test_resume_rejects_an_edited_but_valid_segmentation(source_video, tmp_path):
+    from framecleave.workflow import process_video
+    from framecleave.config import Config
+    from framecleave.model import Timeline
+    out = tmp_path / 'review'
+    process_video(source_video, out, Config(), dry_run=True, cuts=[7, 47])
+    path = out / 'scene-index.json'
+    index = json.loads(path.read_text())
+    timeline = Timeline.from_dict(index['timeline'])
+    index['scenes'] = timeline.scenes([8, 47])
+    index['boundaries'][0].update(frame=8, pts=timeline.pts[8])
+    path.write_text(json.dumps(index))
+    with pytest.raises(ValueError, match='segmentation'):
+        process_video(source_video, out, Config(), dry_run=True, cuts=[7, 47], resume=True)
+
+
+def test_resume_requires_unchanged_certificate(source_video, tmp_path):
+    from framecleave.workflow import process_video
+    from framecleave.config import Config
+    out = tmp_path / 'export'
+    process_video(source_video, out, Config(), cuts=[7, 47])
+    certificate = out / 'certificates/0001.json'
+    certificate.write_text('{}')
+    with pytest.raises(ValueError, match='certificate'):
+        process_video(source_video, out, Config(), cuts=[7, 47], resume=True)

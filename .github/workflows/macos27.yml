@@ -1,0 +1,20 @@
+name: native-macos27-validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  target:
+    # Explicit target hardware: never substitute an x86 VM and label it Apple Silicon.
+    # An owner-provisioned runner with these labels is required. Do not run untrusted PRs here.
+    runs-on: [self-hosted, macOS, ARM64, macos27]
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m venv .venv
+      - run: .venv/bin/python -m pip install -r requirements-dev.txt -e .
+      - run: .venv/bin/python scripts/validate_macos.py --output macos-validation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-macos27-validation
+          path: macos-validation/*

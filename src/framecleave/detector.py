@@ -254,7 +254,8 @@ def detect(info: MediaInfo, analysis: Analysis, config: Config) -> list[dict]:
             for n in end_at.get(frame.number, []):
                 old, before, after, new, prev2, next1 = windows.pop(n)
                 assert all(x is not None for x in (old, before, after, new, prev2, next1))
-                gray = lambda x: cv2.cvtColor(x, cv2.COLOR_RGB2GRAY)
+                def gray(x):
+                    return cv2.cvtColor(x, cv2.COLOR_RGB2GRAY)
                 e = geometry(before, after)
                 e.update(mad=float(scores[n, 0]), hist=float(scores[n, 2]), ratio=float(ratio[n]),
                          block_ratio=float(block_ratio[n]), block_peak=float(scores[n, 5]),

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import csv
-from fractions import Fraction
 import html
 import io
 import json

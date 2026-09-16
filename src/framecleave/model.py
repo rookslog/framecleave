@@ -39,6 +39,8 @@ class Timeline:
             raise ValueError("Decoded PTS must be strictly increasing; repair input explicitly")
         if any(type(d) is not int or d <= 0 for d in self.durations):
             raise ValueError("Missing/non-positive frame duration; cannot establish exact endpoint")
+        if self.durations[:-1] != [b - a for a, b in zip(self.pts, self.pts[1:])]:
+            raise ValueError("Frame durations must equal adjacent display-time intervals")
         if self.keyframes != sorted(set(self.keyframes)) or any(
             type(i) is not int or not 0 <= i < len(self.pts) for i in self.keyframes
         ):
@@ -112,12 +114,21 @@ def validate_index(value: dict) -> Timeline:
         for key in (
             "number", "start_frame", "end_frame", "last_frame", "frame_count",
             "start_pts", "end_pts", "duration_rational",
+            "start_time_rational", "end_time_rational", "start_relative", "end_relative",
         ):
             if actual.get(key) != correct[key]:
                 raise ValueError(f"Invalid scene partition: {key}")
         output = actual.get("output_file")
         if output and (Path(output).is_absolute() or ".." in Path(output).parts):
             raise ValueError("Output paths must be relative and contained in the job directory")
+    boundaries = value.get("boundaries", [])
+    numbers = [b["frame"] for b in boundaries]
+    if numbers != sorted(set(numbers)) or any(type(n) is not int or not 0 < n < timeline.frame_count for n in numbers):
+        raise ValueError("Invalid boundary ordinal list")
+    if any(b.get("decision") not in {"cut", "review"} or b.get("pts") != timeline.pts[b["frame"]] for b in boundaries):
+        raise ValueError("Invalid boundary decision or PTS")
+    if [b["frame"] for b in boundaries if b["decision"] == "cut"] != cuts:
+        raise ValueError("Accepted boundaries disagree with the scene partition")
     source = value.get("source", {})
     digest = source.get("sha256", "")
     if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):

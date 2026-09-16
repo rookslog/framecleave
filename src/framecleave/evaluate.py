@@ -45,12 +45,18 @@ def match_cuts(
         while i or j:
             direction = choices[i][j] if i and j else (1 if i else 2)
             if direction == 3:
-                pairs.append((p[i - 1], r[j - 1])); i -= 1; j -= 1
+                pairs.append((p[i - 1], r[j - 1]))
+                i -= 1
+                j -= 1
             elif direction == 1:
-                fp.append(p[i - 1]); i -= 1
+                fp.append(p[i - 1])
+                i -= 1
             else:
-                fn.append(r[j - 1]); j -= 1
-        pairs.reverse(); fp.sort(); fn.sort()
+                fn.append(r[j - 1])
+                j -= 1
+        pairs.reverse()
+        fp.sort()
+        fn.sort()
     tp = len(pairs)
     precision = tp / len(p) if p else None
     recall = tp / len(r) if r else None

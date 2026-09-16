@@ -1,0 +1,10 @@
+include README.md LICENSE CHANGELOG.md CONTRIBUTING.md requirements*.txt
+recursive-include src *.py *.json
+recursive-include tests *.py
+recursive-include docs *.md
+recursive-include scripts *.py *.sh
+recursive-include benchmarks *.md *.json
+prune .git
+prune private
+prune outputs
+global-exclude *.pyc *.mp4 *.mkv *.mov *.jpg *.png *.npy *.npz *.rgb *.pth *.safetensors

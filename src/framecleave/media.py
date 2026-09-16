@@ -174,7 +174,7 @@ def iter_video(
         "-err_detect", "explode", "-threads", str(threads),
         "-protocol_whitelist", "file,pipe,crypto", "-copyts", "-noautorotate", "-i", str(info.path),
         "-map", f"0:{info.video['index']}", "-an", "-sn", "-dn",
-        "-filter_script:v", str(script),
+        "-/filter:v", str(script),
         "-fps_mode", "passthrough", "-threads", "1", "-f", "rawvideo", "pipe:1",
     ]
     if selected is not None:
@@ -273,3 +273,39 @@ def video_hashes(info: MediaInfo, *, threads: int = 2) -> list[dict]:
     if actual_base != tb or not rows:
         raise MediaError("Framehash output changed time base or contains no frames")
     return rows
+
+
+def audit_frame_metadata(info: MediaInfo, *, threads: int = 2) -> dict:
+    """Scan native frame properties, including late HDR SEI, before re-encoding.
+
+    This extra decode is intentional: stream headers alone do not describe dynamic
+    side data or parameter changes later in the file. Never normalize those silently.
+    """
+    fields = ['width', 'height', 'pix_fmt', 'interlaced_frame', 'color_range', 'color_space',
+              'color_primaries', 'color_transfer', 'chroma_location']
+    command = [executable('ffprobe'), '-v', 'error', '-threads', str(threads),
+               '-protocol_whitelist', 'file,pipe,crypto', '-select_streams', str(info.video['index']),
+               '-show_frames', '-show_entries', 'frame=' + ','.join(fields) + ':frame_side_data=side_data_type',
+               '-of', 'json', str(info.path)]
+    document = json.loads(run(command))
+    first = None
+    frames = document.get('frames', [])
+    if not frames:
+        raise MediaError('No native frame metadata could be audited')
+    for number, frame in enumerate(frames):
+        side = str(frame.get('side_data_list', [])).lower()
+        if frame.get('color_transfer') in {'smpte2084', 'arib-std-b67'} or any(
+            key in side for key in ['dovi', 'dolby', 'mastering', 'content light', 'hdr', 'dynamic hdr']
+        ):
+            raise PreservationError(f'HDR side data at source frame {number} is not supported for re-encoding')
+        if frame.get('interlaced_frame'):
+            raise PreservationError(f'Interlaced source frame {number} is not supported for re-encoding')
+        properties = {key: frame.get(key) for key in fields}
+        if first is None:
+            first = properties
+        elif properties != first:
+            raise PreservationError(f'Native frame properties changed at source frame {number}; export refused')
+    for key in ['width', 'height', 'pix_fmt']:
+        if first[key] != info.video.get(key):
+            raise PreservationError(f'Native frame {key} disagrees with stream header')
+    return {'frames_audited': len(frames), 'constant_native_properties': first, 'unsupported_hdr_found': False}

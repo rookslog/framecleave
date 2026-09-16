@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools==82.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "framecleave"
+version = "0.1.0rc1"
+description = "Local hard-cut detection with decode-verified frame-exact exports"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "FrameCleave contributors"}]
+dependencies = ["numpy==2.3.5", "opencv-python==4.13.0.92"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Multimedia :: Video",
+]
+
+[project.scripts]
+framecleave = "framecleave.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest==9.0.2", "ruff==0.15.7", "build==1.3.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.setuptools.package-data]
+framecleave = ["schemas/*.json"]

@@ -1,5 +1,4 @@
 from fractions import Fraction
-from pathlib import Path
 
 import pytest
 
@@ -72,5 +71,32 @@ def test_large_selection_expression_is_balanced():
         elif char == ")":
             depth -= 1
     assert peak < 30
-    out = run(ffmpeg_base() + ["-f", "lavfi", "-i", "color=size=16x16:duration=0.04:rate=25",
+    run(ffmpeg_base() + ["-f", "lavfi", "-i", "color=size=16x16:duration=0.04:rate=25",
                                "-vf", f"select='{expression}'", "-f", "null", "-"])
+
+
+def test_per_frame_audit_detects_dynamic_hdr_not_just_stream_flags(tmp_path):
+    from framecleave.media import audit_frame_metadata, probe, PreservationError
+    import subprocess
+    import pytest
+    pieces=[]
+    for j,trc in enumerate(['bt709','smpte2084']):
+        p=tmp_path/f'{j}.h264'
+        subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=128x96:rate=30:duration=0.5',
+                        '-vf',f'setparams=color_primaries=bt2020:color_trc={trc}:colorspace=bt2020nc',
+                        '-c:v','libx264','-threads','1','-g','15','-bf','0','-f','h264',str(p)],check=True)
+        pieces.append(p.read_bytes())
+    combined=tmp_path/'changing.h264'
+    combined.write_bytes(b''.join(pieces))
+    with pytest.raises(PreservationError,match='HDR|changed'):
+        audit_frame_metadata(probe(combined))
+
+
+def test_analysis_uses_current_filter_file_option(source_video, caplog):
+    import logging
+    from framecleave.media import iter_video, probe
+    caplog.set_level(logging.DEBUG, logger='framecleave.media')
+    frames = list(iter_video(probe(source_video), width=80, height=60, selected=[0, 17, 89]))
+    assert [f.number for f in frames] == [0, 17, 89]
+    assert '-filter_script' not in caplog.text
+    assert '-/filter:v' in caplog.text

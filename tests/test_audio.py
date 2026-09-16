@@ -1,8 +1,6 @@
 from fractions import Fraction
 import hashlib
-from pathlib import Path
 
-import pytest
 
 
 def test_audio_cache_and_exact_sample_slice(source_video, tmp_path):

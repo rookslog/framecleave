@@ -40,3 +40,34 @@ def test_timeline_roundtrip():
     from framecleave.model import Timeline
     t = make_timeline()
     assert Timeline.from_dict(t.to_dict()).to_dict() == t.to_dict()
+
+
+def valid_index():
+    t=make_timeline()
+    return {'schema_version':1,'interval_semantics':'decoded-frames-half-open','timeline':t.to_dict(),
+            'source':{'sha256':'a'*64,'frame_count':t.frame_count},'scenes':t.scenes([2]),
+            'boundaries':[{'frame':2,'pts':1067,'decision':'cut'}]}
+
+
+def test_index_rejects_boundary_partition_disagreement():
+    from framecleave.model import validate_index
+    index=valid_index()
+    index['boundaries'][0]['frame']=1
+    with pytest.raises(ValueError,match='boundar'):
+        validate_index(index)
+
+
+def test_index_rejects_fabricated_rational_timestamp():
+    from framecleave.model import validate_index
+    index=valid_index()
+    index['scenes'][0]['start_time_rational']='99/1'
+    with pytest.raises(ValueError,match='start_time_rational'):
+        validate_index(index)
+
+
+def test_index_rejects_path_traversal():
+    from framecleave.model import validate_index
+    index=valid_index()
+    index['scenes'][0]['output_file']='../../outside.mov'
+    with pytest.raises(ValueError,match='relative'):
+        validate_index(index)

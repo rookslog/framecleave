@@ -1,0 +1,35 @@
+name: test-and-build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    container: python:3.13-trixie
+    steps:
+      - name: System dependencies
+        run: apt-get update && apt-get install -y --no-install-recommends ffmpeg git libgl1 libglib2.0-0t64
+      - uses: actions/checkout@v4
+      - name: Install isolated project and development tools
+        run: python -m pip install -r requirements-dev.txt -e .
+      - run: framecleave doctor
+      - run: ruff check .
+      - run: pytest
+      - run: python scripts/audit_release.py
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-package-candidate
+          path: dist/*
+  macos-arm64:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: test "$(uname -m)" = arm64
+      - run: brew install ffmpeg
+      - run: python -m pip install -r requirements-dev.txt -e .
+      - run: framecleave doctor
+      - run: pytest

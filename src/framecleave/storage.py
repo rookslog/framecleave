@@ -40,7 +40,7 @@ class JobDirectory:
     def __enter__(self) -> Path:
         if self.path.is_symlink():
             raise FileExistsError(f"Job directory must not be a symlink: {self.path}")
-        self.path.mkdir(parents=True, exist_ok=True)
+        self.path.mkdir(mode=0o700, parents=True, exist_ok=True)
         if not self.resume and any(self.path.iterdir()):
             raise FileExistsError(f"Output is not empty; use --resume for a matching job: {self.path}")
         lock = self.path / '.lock'
@@ -78,3 +78,30 @@ class JobDirectory:
             except (FileNotFoundError, ValueError):
                 pass
             self.owned = False
+
+
+class JobLog:
+    """Per-job diagnostics; call only after acquiring that job's process lock."""
+    def __init__(self, directory: Path):
+        self.directory = directory
+        self.handler = None
+
+    def __enter__(self):
+        import logging
+        path = self.directory / 'diagnostics.log'
+        if path.is_symlink():
+            raise FileExistsError('Diagnostic log must not be a symlink')
+        self.handler = logging.FileHandler(path, encoding='utf-8')
+        self.handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+        self.handler.setLevel(logging.DEBUG)
+        self.logger = logging.getLogger('framecleave')
+        self.previous = self.logger.level
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.addHandler(self.handler)
+        return self
+
+    def __exit__(self, *_):
+        if self.handler:
+            self.logger.removeHandler(self.handler)
+            self.handler.close()
+            self.logger.setLevel(self.previous)

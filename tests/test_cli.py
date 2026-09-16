@@ -1,6 +1,4 @@
 import json
-import os
-from pathlib import Path
 import subprocess
 import sys
 
@@ -31,7 +29,8 @@ def test_split_dry_run_cli_and_wrong_cuts(source_video,tmp_path):
 
 def test_batch_isolates_failure_and_resumes(source_video,tmp_path):
     import shutil
-    inputs=tmp_path/'inputs';inputs.mkdir()
+    inputs=tmp_path/'inputs'
+    inputs.mkdir()
     shutil.copy(source_video,inputs/'good clip.mp4')
     (inputs/'broken.mkv').write_text('not video')
     result=call_cli('batch',inputs,'-o',tmp_path/'out','--dry-run','--jobs','2','--json')
@@ -50,3 +49,81 @@ def test_verify_redecodes_outputs(source_video,tmp_path):
     result=call_cli('verify',source_video,tmp_path/'out'/'scene-index.json','--json')
     assert result.returncode == 0,result.stderr
     assert json.loads(result.stdout)['verified']
+
+
+def test_ctrl_c_releases_lock_and_keeps_a_resumable_state(source_video, tmp_path):
+    import os
+    import shutil
+    import signal
+    import time
+
+    # Synchronize at the subprocess boundary. A tiny real video can otherwise
+    # finish between noticing state.json and sending SIGINT, making this test race.
+    out = tmp_path / 'cancel'
+    entered = tmp_path / 'decoder-entered'
+    shim_dir = tmp_path / 'bin'
+    shim_dir.mkdir()
+    actual_ffmpeg = shutil.which('ffmpeg')
+    assert actual_ffmpeg
+    shim = shim_dir / 'ffmpeg'
+    shim.write_text(
+        f'#!{sys.executable}\n'
+        'import os,sys,time\n'
+        'from pathlib import Path\n'
+        'if "-/filter:v" in sys.argv or "-filter_script:v" in sys.argv:\n'
+        f'    Path({str(entered)!r}).write_text(str(os.getpid()))\n'
+        '    while True: time.sleep(0.01)\n'
+        f'os.execv({actual_ffmpeg!r}, [{actual_ffmpeg!r}] + sys.argv[1:])\n'
+    )
+    shim.chmod(0o700)
+    environment = dict(os.environ)
+    environment['PATH'] = str(shim_dir) + os.pathsep + environment.get('PATH', '')
+    # A background test runner may inherit SIG_IGN from its shell. Establish the
+    # foreground CLI signal disposition explicitly in the child, never preexec_fn.
+    bootstrap = ('import signal; signal.signal(signal.SIGINT, signal.default_int_handler); '
+                 'from framecleave.cli import main; raise SystemExit(main())')
+    process = subprocess.Popen(
+        [sys.executable, '-c', bootstrap, 'inspect', str(source_video), '-o', str(out), '--quiet'],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment,
+    )
+    try:
+        deadline = time.monotonic() + 20
+        while not entered.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert entered.exists(), 'Decoder did not reach the controlled cancellation point'
+        assert (out / 'state.json').exists()
+        assert process.poll() is None
+        process.send_signal(signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=10)
+        assert process.returncode == 130, (stdout, stderr)
+        assert not (out / '.lock').exists()
+        assert json.loads((out / 'state.json').read_text())['status'] == 'interrupted'
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+        if entered.exists():
+            # Also clean the controlled shim if an assertion or timeout killed the CLI.
+            try:
+                os.kill(int(entered.read_text()), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+
+def test_diagnostics_reports_actual_opencv_build_not_just_metadata():
+    result = call_cli('doctor', '--json')
+    report = json.loads(result.stdout)
+    assert report['opencv_build']['version']
+    assert report['opencv_build']['gui']
+    assert 'opencv-python' in report['packages']
+    assert report['opencv_build']['distribution_count'] >= 1
+
+
+def test_doctor_reports_missing_media_tools_without_traceback(monkeypatch):
+    monkeypatch.setenv('PATH', '')
+    result = call_cli('doctor', '--json')
+    assert result.returncode == 3
+    report = json.loads(result.stdout)
+    assert not report['ok']
+    assert report['ffmpeg'] is None and report['ffprobe'] is None
+    assert 'Traceback' not in result.stderr

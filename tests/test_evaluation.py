@@ -1,4 +1,3 @@
-import pytest
 
 def test_exact_matching_exposes_one_frame_error():
     from framecleave.evaluate import match_cuts
@@ -19,3 +18,11 @@ def test_empty_reference_does_not_hide_false_positives():
     assert r['fp'] == 1
     assert r['precision'] == 0
     assert r['recall'] is None
+
+
+def test_tolerant_matching_uses_global_cardinality_not_nearest_greedy():
+    from framecleave.evaluate import match_cuts
+    result = match_cuts([2, 4], [0, 3], tolerance=2, duration_seconds=10)
+    assert result['tp'] == 2
+    assert result['fp'] == result['fn'] == 0
+    assert result['offsets_frames'] == [2, 1]

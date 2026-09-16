@@ -17,12 +17,12 @@ import tempfile
 import time
 
 from .audio import AudioSlice, extract_audio, slice_track
-from .media import MediaError, MediaInfo, PreservationError, ffmpeg_base, probe, run, sha256_file, video_hashes
+from .media import MediaError, MediaInfo, PreservationError, ffmpeg_base, probe, run, sha256_file, video_hashes, audit_frame_metadata
 from .model import Timeline
 
 LOG = logging.getLogger(__name__)
 KNOWN = {None, "unknown", "unspecified", "N/A"}
-ATTRIBUTES = ("width", "height", "pix_fmt", "sample_aspect_ratio", "color_range",
+ATTRIBUTES = ("codec_name", "width", "height", "pix_fmt", "sample_aspect_ratio", "color_range",
               "color_space", "color_transfer", "color_primaries", "chroma_location")
 
 
@@ -92,6 +92,7 @@ class ExportSession:
         self.mode = mode
         self.reference: list[dict] | None = None
         self.audio = None
+        self.frame_audit = None
         self.work.mkdir(parents=True, exist_ok=True)
 
     def __enter__(self) -> "ExportSession":
@@ -107,6 +108,8 @@ class ExportSession:
                 raise MediaError("Source decoded frame count changed since analysis")
             if [r["pts"] for r in self.reference] != self.timeline.pts:
                 raise MediaError("Source decoded PTS changed since analysis")
+        if audio and self.frame_audit is None:
+            self.frame_audit = audit_frame_metadata(self.info, threads=self.threads)
         if audio and self.audio is None:
             self.audio = extract_audio(self.info, self.work / "canonical-audio", threads=self.threads)
 
@@ -268,6 +271,7 @@ class ExportSession:
                             result = {"method": "stream-copy-video" if copy else "lossless-reencode",
                                       "video": video, "audio": audio, "output_timestamp_origin": "scene-video-start",
                                       "attempt_failures": failures, "seek_optimization_used": seek,
+                                      "source_frame_audit": self.frame_audit,
                                       "audio_streams_without_overlap": [a.stream_index for a in self.audio if a not in [p.track for p in parts]],
                                       "command": command}
                             break

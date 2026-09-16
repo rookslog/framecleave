@@ -1,0 +1,3 @@
+# Exact runtime versions. pip/uv select native wheels for the host.
+numpy==2.3.5
+opencv-python==4.13.0.92

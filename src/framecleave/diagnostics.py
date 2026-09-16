@@ -13,7 +13,7 @@ from . import __version__
 
 def diagnostics() -> dict:
     packages = {}
-    for name in ['numpy', 'opencv-python-headless']:
+    for name in ['numpy', 'opencv-python', 'opencv-python-headless', 'opencv-contrib-python', 'opencv-contrib-python-headless']:
         try:
             packages[name] = version(name)
         except PackageNotFoundError:
@@ -48,7 +48,19 @@ def diagnostics() -> dict:
             result['warnings'].append(str(exc))
     if result['system'] == 'Darwin' and result['machine'] != 'arm64':
         result['warnings'].append('This Python process is not arm64; use native Homebrew/Python instead of Rosetta')
-    if not all(packages.values()):
+    variants = [name for name, value in packages.items() if name.startswith('opencv-') and value]
+    result['opencv_build'] = {'version': None, 'gui': None, 'distribution_count': len(variants)}
+    try:
+        import cv2
+        build = cv2.getBuildInformation()
+        match = re.search(r'^\s*GUI:\s*(.+)$', build, re.MULTILINE)
+        result['opencv_build'].update(version=cv2.__version__, gui=match[1].strip() if match else 'unknown')
+    except ImportError as exc:
+        result['ok'] = False
+        result['warnings'].append(f'OpenCV cannot be imported: {exc}')
+    if len(variants) > 1:
+        result['warnings'].append('Multiple OpenCV distributions share cv2; use a fresh isolated environment with exactly one')
+    if not packages['numpy'] or not packages['opencv-python']:
         result['warnings'].append('A declared Python dependency has no package metadata; reinstall the package')
     if not {'libx264', 'libx265'}.issubset(result['encoders']):
         result['warnings'].append('H.264/HEVC lossless fallback requires both libx264 and libx265 encoders')
