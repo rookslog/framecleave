@@ -116,3 +116,47 @@ def test_resume_rejects_a_changed_compact_profile(source_video, tmp_path):
     with pytest.raises(ValueError, match='export mode changed'):
         process_video(source_video, out, Config(), dry_run=True, cuts=[7], mode='compact', resume=True,
                       policy=ExportPolicy.compact(crf=20))
+
+
+def test_compact_verification_uses_certified_encoder_settings_not_decode_threads(integer_audio_video, tmp_path):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video, verify_job
+
+    out = tmp_path / 'compact-job'
+    process_video(integer_audio_video, out, Config(threads=1), cuts=[7, 47], mode='compact')
+    result = verify_job(integer_audio_video, out / 'scene-index.json', threads=2)
+    assert result['verified'] is True
+    assert result['policy']['video']['encoder_threads'] == 1
+    assert result['pixel_equality'] == 'not_applicable'
+
+
+def test_compact_verification_refuses_a_different_reference_encoder_build(source_video, tmp_path):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video, verify_job
+
+    out = tmp_path / 'compact-build'
+    process_video(source_video, out, Config(threads=1), cuts=[7], mode='compact')
+    certificate = out / 'certificates/0001.json'
+    value = json.loads(certificate.read_text())
+    value['video']['reference_encoder_build'] = 'different-encoder-build'
+    certificate.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='encoder build'):
+        verify_job(source_video, out / 'scene-index.json')
+
+
+def test_compact_stream_copy_is_reverified_under_the_exact_copy_contract(tmp_path):
+    import subprocess
+    from framecleave.config import Config
+    from framecleave.workflow import process_video, verify_job
+
+    source = tmp_path / 'intra.mov'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+                    'testsrc2=size=128x96:rate=30:duration=1', '-c:v', 'libx264',
+                    '-threads', '1', '-g', '1', '-bf', '0', str(source)], check=True)
+    out = tmp_path / 'copy-job'
+    process_video(source, out, Config(threads=1), cuts=[7, 27], mode='compact')
+    certificate = json.loads((out / 'certificates/0002.json').read_text())
+    assert certificate['method'] == 'stream-copy-video'
+    result = verify_job(source, out / 'scene-index.json')
+    assert result['verified'] is True
+    assert result['scenes'][1]['video']['pixel_equality'] == 'equal'

@@ -50,3 +50,17 @@ def test_old_certificates_are_read_as_exact_and_compact_cannot_claim_pixel_equal
                    'policy_digest': policy_digest(compact), 'video': {'all_native_pixels_equal': True}}
     with pytest.raises(ValueError, match='cannot claim'):
         certificate_policy(certificate, source_codec='h264')
+
+
+def test_compact_default_audio_binds_native_pcm_fallback_policy():
+    from framecleave.policy import ExportPolicy, policy_digest
+
+    safe = ExportPolicy.compact()
+    assert safe.audio.codec == 'alac-or-pcm'
+    assert policy_digest(safe) != policy_digest(ExportPolicy.compact(audio='alac'))
+
+
+def test_compact_policy_binds_reference_encoder_thread_configuration():
+    from framecleave.policy import ExportPolicy, policy_digest
+
+    assert policy_digest(ExportPolicy.compact(threads=1)) != policy_digest(ExportPolicy.compact(threads=2))

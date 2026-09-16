@@ -16,9 +16,9 @@ from .config import Config
 from .detector import DETECTOR_VERSION, analyze, detect
 from .diagnostics import diagnostics
 from .export import ExportSession, output_suffix, whole_scene
-from .media import MediaError, probe, sha256_file
+from .media import MediaError, ffmpeg_build_fingerprint, probe, sha256_file
 from .model import SCHEMA_VERSION, read_index, validate_index
-from .policy import ExportPolicy, certificate_policy, policy_digest, resolve_policy
+from .policy import ExportPolicy, bind_encoder_build, certificate_policy, policy_digest, resolve_policy
 from .progress import ProgressReporter, ProgressSink
 from .report import make_thumbnails, render_report
 from .storage import JobDirectory, JobLog, atomic_json
@@ -66,7 +66,8 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
         reporter.emit('job_failed', 'probing', outcome='failed',
                       reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'probe-failed')
         raise
-    resolved_policy = policy or resolve_policy(mode, source_codec=info.video['codec_name'])
+    resolved_policy = (bind_encoder_build(policy) if policy else
+                       resolve_policy(mode, source_codec=info.video['codec_name'], threads=config.threads))
     if resolved_policy.mode != mode:
         raise ValueError('Export policy mode differs from the requested mode')
     request = _request(config, mode, cuts, index_path, resolved_policy)
@@ -248,12 +249,19 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
     root = Path(index_path).resolve().parent
     results = []
     policies = []
+    methods = {}
+    current_encoder_build = None
     for scene in index['scenes']:
         if not scene.get('export'):
             raise ValueError('Cannot verify a scene without an export certificate')
         certificate_path = root / scene['export']
         _assert_contained(root, certificate_path)
         certificate = json.loads(certificate_path.read_text(encoding='utf-8'))
+        methods[scene['number']] = certificate.get('method')
+        if certificate.get('method') == 'compact-reencode':
+            current_encoder_build = current_encoder_build or ffmpeg_build_fingerprint()
+            if certificate.get('video', {}).get('reference_encoder_build') != current_encoder_build:
+                raise ValueError('Compact reference encoder build differs from the certified output')
         policies.append(certificate_policy(certificate, source_codec=info.video['codec_name']))
     if len({policy_digest(policy) for policy in policies}) != 1:
         raise ValueError('Job certificates carry inconsistent export policies')
@@ -268,8 +276,10 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
                 output = probe(path)
                 whole = whole_scene(scene, timeline) and output.sha256 == info.sha256
                 video = (session.verify_compact_video(scene, output)
-                         if policy.mode == 'compact' and not whole
+                         if policy.mode == 'compact' and methods[scene['number']] == 'compact-reencode'
                          else session.verify_exact_video(scene, output, whole=whole))
+                if policy.mode == 'compact':
+                    video.pop('all_native_pixels_equal', None)
                 audio = []
                 if not whole:
                     session.prepare()

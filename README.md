@@ -66,7 +66,7 @@ To promote a single-file inspection in place, repeat the same input/configuratio
 boundary options with `split --resume -o review`, without adding `--index`. Changing
 configuration, explicit cuts, imported-index content, tool version or export mode
 requires a new output directory. JSON results use `--json`; progress goes to stderr.
-`--quiet`, `--verbose`, subcommand `--help`, and `doctor --json` are available.
+`--quiet`, `--verbose`, `--debug`, subcommand `--help`, and `doctor --json` are available.
 
 ## Exactness and preservation
 
@@ -99,6 +99,24 @@ not silently discarded. Whole-file byte copying preserves all original streams.
 
 The review thumbnails are downscaled RGB images, not a promise of HDR color-managed
 preview. See [media policy](docs/cutting-strategy.md) for the exact limitations.
+
+### Experimental compact export
+
+The feature branch supports explicit `--mode compact`; the no-flag default remains
+`auto` until quality calibration and owner profile selection are complete. Compact
+tries independently verified exact stream copy, then same-codec H.264/HEVC software
+re-encoding at CRF 18/medium. Video is intentionally lossy: certificates report
+`pixel_equality: not_applicable` for re-encoding, never native-pixel equality.
+
+Compact preserves native audio samples: supported 16-bit integer streams use verified
+ALAC; float, wider-integer, or unsupported-layout streams retain native PCM. AAC-decoded
+float audio therefore stays PCM, with its codec and selection reason in the certificate.
+Audio size can still exceed the original compressed audio.
+
+Compact content is checked against an independent exact-frame reference encode, with
+rational timing/endpoints, preserved properties, and SSIM/PSNR evidence. This adds a
+second encode and temporary disk usage. Reference replay requires the recorded FFmpeg
+build and encoder-thread settings; `verify --threads` controls decoding resources only.
 
 ## Outputs and safety
 

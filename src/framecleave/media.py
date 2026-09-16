@@ -40,10 +40,10 @@ def ffmpeg_base(*, level: str = "error") -> list[str]:
     return [executable("ffmpeg"), "-nostdin", "-hide_banner", "-loglevel", level, "-xerror"]
 
 
-def run(command: list[str], *, timeout: float | None = None) -> bytes:
+def run(command: list[str], *, timeout: float | None = None, cwd: Path | None = None) -> bytes:
     """Run an argv, never a shell. Capture errors and kill children on cancellation."""
     LOG.debug("exec %s", json.dumps(command, ensure_ascii=False))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
     try:
         out, err = process.communicate(timeout=timeout)
     except BaseException:
@@ -63,6 +63,14 @@ def sha256_file(path: Path) -> str:
     with Path(path).open("rb") as handle:
         for block in iter(lambda: handle.read(4 * 1024 * 1024), b""):
             digest.update(block)
+    return digest.hexdigest()
+
+
+def ffmpeg_build_fingerprint() -> str:
+    """Bind deterministic reference encoding to the executable and version report."""
+    path = executable('ffmpeg')
+    digest = hashlib.sha256(run([path, '-version'], timeout=10))
+    digest.update(sha256_file(Path(path)).encode())
     return digest.hexdigest()
 
 

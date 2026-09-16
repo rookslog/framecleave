@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 
@@ -13,6 +13,8 @@ class VideoPolicy:
     encoder: str | None = None
     crf: int | None = None
     preset: str | None = None
+    encoder_threads: int | None = None
+    encoder_build: str | None = None
 
     def __post_init__(self) -> None:
         if self.strategy not in {'copy-then-lossless', 'lossless', 'copy-only', 'compact'}:
@@ -22,7 +24,11 @@ class VideoPolicy:
                 raise ValueError('compact video requires a supported encoder')
             if self.crf not in {16, 18, 20} or self.preset != 'medium':
                 raise ValueError('compact video requires CRF 16, 18, or 20 with preset medium')
-        elif any(value is not None for value in (self.encoder, self.crf, self.preset)):
+            if type(self.encoder_threads) is not int or not 1 <= self.encoder_threads <= 64:
+                raise ValueError('compact encoder threads must be from 1 to 64')
+            if self.encoder_build is not None and (not isinstance(self.encoder_build, str) or len(self.encoder_build) != 64):
+                raise ValueError('invalid compact encoder build fingerprint')
+        elif any(value is not None for value in (self.encoder, self.crf, self.preset, self.encoder_threads, self.encoder_build)):
             raise ValueError('exact video policies cannot carry compact encoder settings')
 
 
@@ -31,7 +37,7 @@ class AudioPolicy:
     codec: str
 
     def __post_init__(self) -> None:
-        if self.codec not in {'source-lossless', 'alac', 'pcm'}:
+        if self.codec not in {'source-lossless', 'alac', 'pcm', 'alac-or-pcm'}:
             raise ValueError(f'unsupported audio policy: {self.codec}')
 
 
@@ -56,11 +62,12 @@ class ExportPolicy:
             raise ValueError('export audio policy must be typed')
 
     @classmethod
-    def compact(cls, *, crf: int = 18, audio: str = 'alac', source_codec: str = 'h264') -> 'ExportPolicy':
+    def compact(cls, *, crf: int = 18, audio: str = 'alac-or-pcm', source_codec: str = 'h264',
+                threads: int = 2) -> 'ExportPolicy':
         encoders = {'h264': 'libx264', 'hevc': 'libx265'}
         if source_codec not in encoders:
             raise ValueError(f'unsupported compact source codec: {source_codec}')
-        return cls('compact', VideoPolicy('compact', encoders[source_codec], crf, 'medium'), AudioPolicy(audio))
+        return cls('compact', VideoPolicy('compact', encoders[source_codec], crf, 'medium', threads), AudioPolicy(audio))
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -78,7 +85,7 @@ class ExportPolicy:
             raise ValueError(f"missing export policy fields: {', '.join(missing)}")
         video = value['video']
         audio = value['audio']
-        if not isinstance(video, dict) or set(video) != {'strategy', 'encoder', 'crf', 'preset'}:
+        if not isinstance(video, dict) or set(video) != {'strategy', 'encoder', 'crf', 'preset', 'encoder_threads', 'encoder_build'}:
             raise ValueError('video policy has unknown or missing fields')
         if not isinstance(audio, dict) or set(audio) != {'codec'}:
             raise ValueError('audio policy has unknown or missing fields')
@@ -91,15 +98,26 @@ class ExportPolicy:
         )
 
 
-def resolve_policy(mode: str, *, source_codec: str, crf: int = 18) -> ExportPolicy:
+def resolve_policy(mode: str, *, source_codec: str, crf: int = 18, threads: int = 2) -> ExportPolicy:
     if mode == 'compact':
-        return ExportPolicy.compact(crf=crf, source_codec=source_codec)
+        return bind_encoder_build(ExportPolicy.compact(crf=crf, source_codec=source_codec, threads=threads))
     strategies = {'auto': 'copy-then-lossless', 'lossless': 'lossless', 'copy-only': 'copy-only'}
     try:
         strategy = strategies[mode]
     except KeyError as exc:
         raise ValueError(f'unknown export mode: {mode}') from exc
     return ExportPolicy(mode, VideoPolicy(strategy), AudioPolicy('source-lossless'))
+
+
+def bind_encoder_build(policy: ExportPolicy) -> ExportPolicy:
+    if policy.mode != 'compact':
+        return policy
+    from .media import ffmpeg_build_fingerprint
+
+    current = ffmpeg_build_fingerprint()
+    if policy.video.encoder_build is not None and policy.video.encoder_build != current:
+        raise ValueError('Compact reference encoder build differs from the certified policy')
+    return replace(policy, video=replace(policy.video, encoder_build=current))
 
 
 def policy_digest(policy: ExportPolicy) -> str:

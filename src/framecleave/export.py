@@ -16,10 +16,10 @@ import shutil
 import tempfile
 import time
 
-from .audio import AudioSlice, extract_audio, slice_track
+from .audio import AudioSlice, audio_encoding, extract_audio, slice_track
 from .media import MediaError, MediaInfo, PreservationError, ffmpeg_base, probe, run, sha256_file, video_hashes, audit_frame_metadata
 from .model import Timeline
-from .policy import ExportPolicy, policy_digest, resolve_policy
+from .policy import ExportPolicy, bind_encoder_build, policy_digest, resolve_policy
 from .progress import ProgressReporter, ProgressSink
 
 LOG = logging.getLogger(__name__)
@@ -90,20 +90,22 @@ class ExportSession:
             raise ValueError("Export mode must be compact, auto, lossless, or copy-only")
         self.info = info
         self.timeline = timeline
-        parent = Path(work_directory)
-        parent.mkdir(parents=True, exist_ok=True)
-        self.work = Path(tempfile.mkdtemp(prefix="framecleave-export-", dir=parent))
         self.threads = threads
-        self.policy = policy or resolve_policy(mode, source_codec=info.video["codec_name"])
+        self.policy = (bind_encoder_build(policy) if policy else
+                       resolve_policy(mode, source_codec=info.video["codec_name"], threads=threads))
         if self.policy.mode != mode:
             raise ValueError("Export policy mode differs from the requested mode")
         self.mode = self.policy.mode
+        if mode == 'compact' and self.policy.video.encoder != {'h264': 'libx264', 'hevc': 'libx265'}.get(info.video['codec_name']):
+            raise ValueError('Compact policy encoder differs from the source codec family')
         self.progress = reporter or ProgressReporter(progress, job_id=job_id)
         self.diagnostics = diagnostics
         self.reference: list[dict] | None = None
         self.audio = None
         self.frame_audit = None
-        self.work.mkdir(parents=True, exist_ok=True)
+        parent = Path(work_directory)
+        parent.mkdir(parents=True, exist_ok=True)
+        self.work = Path(tempfile.mkdtemp(prefix="framecleave-export-", dir=parent))
 
     def __enter__(self) -> "ExportSession":
         return self
@@ -174,12 +176,69 @@ class ExportSession:
         expected_end = self.timeline.endpoint(scene['end_frame']) * self.timeline.time_base - origin
         if end != expected_end:
             raise MediaError(f'Export final-frame endpoint {end} differs from expected {expected_end}')
+        with tempfile.TemporaryDirectory(prefix='compact-reference-', dir=self.work) as temporary:
+            reference_path = Path(temporary) / 'reference.mov'
+            command = self._command(scene, reference_path, [], copy=False, seek=False)
+            command[command.index('-vf') + 1] = (
+                f"trim=start_frame={scene['start_frame']}:end_frame={scene['end_frame']},"
+                f"setpts=PTS-{self.timeline.endpoint(scene['start_frame'])}"
+            )
+            run(command)
+            reference = video_hashes(probe(reference_path, fingerprint=False), threads=self.threads)
+            if len(reference) != len(decoded) or any(
+                actual['sha256'] != expected['sha256'] or actual['size'] != expected['size']
+                for actual, expected in zip(decoded, reference, strict=True)
+            ):
+                raise MediaError('Export changed compact frame correspondence under the resolved policy')
+            quality = self._compact_quality(scene, output, Path(temporary))
         return {
             'frames_verified': len(decoded), 'pixel_equality': 'not_applicable',
             'all_pts_equal': True, 'decode_success': True,
             'first_source_frame': scene['start_frame'], 'last_source_frame': scene['end_frame'] - 1,
             'end_time_rational': str(end), 'preserved_attributes': compare_properties(self.info, output),
+            'content_correspondence': 'independent-frame-ordinal-reference-encode-v1',
+            'reference_encoder_build': self.policy.video.encoder_build,
+            'ordered_reference_frame_hashes_sha256': hashlib.sha256(
+                ''.join(row['sha256'] for row in reference).encode()).hexdigest(),
+            'quality': quality,
         }
+
+    def _compact_quality(self, scene: dict, output: MediaInfo, directory: Path) -> dict:
+        evidence = {'frames_compared': scene['frame_count']}
+        for metric, key in (('ssim', 'All'), ('psnr', 'psnr_avg')):
+            stats = directory / f'{metric}.txt'
+            graph = (
+                f"[0:{self.info.video['index']}]trim=start_frame={scene['start_frame']}:"
+                f"end_frame={scene['end_frame']},setpts=PTS-STARTPTS[source];"
+                f"[1:{output.video['index']}]setpts=PTS-STARTPTS[output];"
+                f"[source][output]{metric}=stats_file={metric}.txt:shortest=1:repeatlast=0[metric]"
+            )
+            command = ffmpeg_base() + ['-filter_complex_threads', '1', '-threads', str(self.threads),
+                                      '-noautorotate', '-protocol_whitelist', 'file,pipe,crypto',
+                                      '-i', str(self.info.path), '-noautorotate',
+                                      '-protocol_whitelist', 'file,pipe,crypto', '-i', str(output.path),
+                                      '-filter_complex', graph, '-map', '[metric]', '-an', '-f', 'null', '-']
+            run(command, cwd=directory)
+            values = []
+            if not stats.is_file():
+                raise MediaError(f'Missing compact {metric} quality metric file')
+            with stats.open(encoding='utf-8') as handle:
+                for line in handle:
+                    entries = dict(part.split(':', 1) for part in line.split() if ':' in part)
+                    try:
+                        value = float(entries[key])
+                    except (KeyError, ValueError) as exc:
+                        raise MediaError(f'Missing compact {metric} quality metric') from exc
+                    if math.isnan(value) or (metric == 'ssim' and not math.isfinite(value)):
+                        raise MediaError(f'Invalid compact {metric} quality metric')
+                    values.append(value)
+            if len(values) != scene['frame_count']:
+                raise MediaError(f'Compact {metric} metric count differs from requested frames')
+            mean = sum(values) / len(values)
+            minimum = min(values)
+            evidence[metric] = {'mean': mean if math.isfinite(mean) else 'infinity',
+                                'minimum': minimum if math.isfinite(minimum) else 'infinity'}
+        return evidence
 
     def verify_audio(self, output: MediaInfo, slices: list[AudioSlice], directory: Path) -> list[dict]:
         decoded = extract_audio(output, directory, threads=self.threads)
@@ -187,6 +246,9 @@ class ExportSession:
             raise MediaError("Export changed the number of overlapping audio streams")
         verified = []
         for track, expected in zip(decoded, slices, strict=True):
+            codec, encoding_reason = audio_encoding(expected.track, self.policy.audio.codec)
+            if output.audio[len(verified)]['codec_name'] != codec:
+                raise PreservationError('Export audio codec differs from the resolved encoding policy')
             if (track.rate, track.channels, track.layout) != (expected.track.rate, expected.track.channels, expected.track.layout):
                 raise PreservationError("Audio sample rate or channel layout changed")
             if track.samples != expected.samples or sha256_file(track.path) != expected.sha256:
@@ -197,6 +259,7 @@ class ExportSession:
                 raise MediaError(f"Audio/video synchronization error {error} exceeds one output clock tick {tolerance}")
             verified.append({**expected.evidence(), "samples_verified": track.samples,
                              "sample_equality": "equal",
+                             "codec": codec, "encoding_reason": encoding_reason,
                              "all_samples_equal": True, "first_sample_timing_error_rational": str(error),
                              "timing_error_limit_rational": str(tolerance)})
         return verified
@@ -228,9 +291,17 @@ class ExportSession:
         else:
             command += ["-vf", f"trim=start_pts={start_pts}:end_pts={end_pts},setpts=PTS-{start_pts}",
                         "-fps_mode", "passthrough", "-enc_time_base", f"{t.time_base.numerator}:{t.time_base.denominator}",
-                        "-pix_fmt", self.info.video["pix_fmt"], "-threads:v", str(self.threads)]
+                        "-pix_fmt", self.info.video["pix_fmt"], "-threads:v",
+                        str(self.policy.video.encoder_threads if self.mode == 'compact' else self.threads)]
             codec = self.info.video["codec_name"]
-            if codec == "hevc":
+            if self.mode == 'compact':
+                video = self.policy.video
+                command += ['-c:v', video.encoder, '-preset', video.preset, '-crf', str(video.crf)]
+                if codec == 'hevc':
+                    command += ['-x265-params', f'bframes=0:pools={video.encoder_threads}:frame-threads=1:log-level=error']
+                else:
+                    command += ['-bf', '0']
+            elif codec == "hevc":
                 command += ["-c:v", "libx265", "-preset", "ultrafast", "-x265-params",
                             f"lossless=1:bframes=0:pools={self.threads}:frame-threads=1:log-level=error"]
             elif codec == "h264":
@@ -249,11 +320,14 @@ class ExportSession:
                     command += [option, str(value)]
         for i, part in enumerate(slices):
             a = part.track
-            command += [f"-c:a:{i}", a.codec, f"-filter:a:{i}",
+            codec, _ = audio_encoding(a, self.policy.audio.codec)
+            command += [f"-c:a:{i}", codec, f"-filter:a:{i}",
                         f"asetpts=PTS+({part.delay.numerator}/{part.delay.denominator})/TB",
                         f"-map_metadata:s:a:{i}", f"0:s:{a.stream_index}"]
             flags = [key for key, value in a.metadata.get("disposition", {}).items() if value]
             command += [f"-disposition:a:{i}", "+".join(flags) or "0"]
+            if codec == 'alac':
+                command += [f'-sample_fmt:a:{i}', 's16p']
         if self.info.video["codec_name"] != "ffv1":
             timescale = math.lcm(t.time_base.denominator, *(p.track.rate for p in slices))
             if timescale > 2**31 - 1:
@@ -282,8 +356,6 @@ class ExportSession:
         attempt_records = []
         certified = False
         try:
-            if self.mode == 'compact':
-                raise PreservationError('Compact encoding is not yet enabled; use an explicit exact mode')
             if whole_scene(scene, self.timeline) and self.mode != "lossless":
                 self.progress.emit("attempt_started", "exporting", scene_id=scene_id,
                                    attempt_id="whole-file-copy")
@@ -312,7 +384,7 @@ class ExportSession:
                     if self.mode != "copy-only":
                         attempts += [(False, True), (False, False)]
                     for attempt_number, (copy, seek) in enumerate(attempts, 1):
-                        method = "stream-copy" if copy else "lossless"
+                        method = "stream-copy" if copy else "compact" if self.mode == 'compact' else "lossless"
                         attempt_id = f"{method}-{'seek' if seek else 'full'}-{attempt_number}"
                         self.progress.emit("attempt_started", "exporting", scene_id=scene_id,
                                            attempt_id=attempt_id)
@@ -320,16 +392,18 @@ class ExportSession:
                             command = self._command(scene, partial, parts, copy=copy, seek=seek)
                             run(command)
                             output = probe(partial, fingerprint=False)
-                            video = self.verify_video(scene, output)
+                            video = (self.verify_compact_video(scene, output)
+                                     if self.mode == 'compact' and not copy else self.verify_exact_video(scene, output))
                             audio = self.verify_audio(output, parts, directory / "verify-audio")
-                            result = {"method": "stream-copy-video" if copy else "lossless-reencode",
+                            export_method = "stream-copy-video" if copy else "compact-reencode" if self.mode == 'compact' else "lossless-reencode"
+                            result = {"method": export_method,
                                       "video": video, "audio": audio, "output_timestamp_origin": "scene-video-start",
                                       "attempt_failures": failures, "seek_optimization_used": seek,
                                       "source_frame_audit": self.frame_audit,
                                       "audio_streams_without_overlap": [a.stream_index for a in self.audio if a not in [p.track for p in parts]],
                                       "command": command}
                             attempt_records.append({"attempt_id": attempt_id,
-                                                    "method": "stream-copy-video" if copy else "lossless-reencode",
+                                                    "method": export_method,
                                                     "outcome": "certified"})
                             break
                         except MediaError as exc:
@@ -346,6 +420,8 @@ class ExportSession:
                             )
                     else:
                         raise MediaError("No verified export could be produced: " + "; ".join(failures))
+            if self.mode == 'compact':
+                result['video'].pop('all_native_pixels_equal', None)
             result.update(schema_version=2, policy=self.policy.to_dict(),
                           policy_digest=policy_digest(self.policy), attempts=attempt_records,
                           verification={"video": result["video"].get("pixel_equality", "equal"),
