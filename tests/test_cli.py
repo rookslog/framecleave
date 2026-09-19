@@ -190,7 +190,8 @@ def test_review_batch_reserves_parent_metadata_within_input_budget(source_video,
     assert result.returncode == 0, result.stderr
     summary = json.loads(result.stdout)
     budget = summary['temporary_storage']
-    assert budget['limit_bytes'] == source_video.stat().st_size * 3
+    expected_limit = sum(path.stat().st_size * 3 // 2 for path in inputs.iterdir())
+    assert budget['limit_bytes'] == expected_limit
     assert budget['parent_peak_reserved_bytes'] <= budget['parent_reserve_bytes']
     assert sum(f['temporary_storage']['limit_bytes'] for f in summary['files']) + budget['parent_reserve_bytes'] == budget['limit_bytes']
 
