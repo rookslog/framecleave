@@ -156,6 +156,36 @@ def test_progress_write_error_still_drains_transport_and_closes_sinks(tmp_path):
     assert sink.closed
 
 
+def test_scene_events_do_not_rescan_the_growing_batch_tree(tmp_path, monkeypatch):
+    import os
+    from framecleave.progress import ProgressCoordinator
+
+    root = tmp_path / 'tree'
+    root.mkdir()
+    scans = []
+    original_walk = os.walk
+
+    def counted_walk(*args, **kwargs):
+        count = 0
+        for base, directories, files in original_walk(*args, **kwargs):
+            count += len(files)
+            yield base, directories, files
+        scans.append(count)
+
+    monkeypatch.setattr('framecleave.progress.os.walk', counted_walk)
+    coordinator = ProgressCoordinator(queue.SimpleQueue(), [NullProgressSink()], total=1,
+                                      root=root, status_path=tmp_path / 'status.json')
+    for number in range(1, 11):
+        (root / f'generated-{number}.json').touch()
+        coordinator.emit(ProgressEvent(run_id='run', event='scene_certified', phase='exporting',
+                                       sequence=number, job_id='generated', scene_id=str(number)))
+    assert scans == []
+
+    coordinator.emit(ProgressEvent(run_id='run', event='job_finished', phase='complete',
+                                   sequence=11, job_id='generated', outcome='success'))
+    assert scans == [10]
+
+
 def test_batch_synthesizes_worker_lost_when_result_has_no_terminal_event(tmp_path, monkeypatch):
     from framecleave.batch import process_batch
     from framecleave.config import Config

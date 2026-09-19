@@ -87,13 +87,13 @@ class ExportSession:
     def __init__(self, info: MediaInfo, timeline: Timeline, work_directory: Path, *, threads: int = 2,
                  mode: str = "auto", progress: ProgressSink | None = None, job_id: str | None = None,
                  reporter: ProgressReporter | None = None, diagnostics: str | None = None,
-                 policy: ExportPolicy | None = None):
+                 policy: ExportPolicy | None = None, bind_reference_encoder: bool = True):
         if mode not in {"compact", "auto", "lossless", "copy-only"}:
             raise ValueError("Export mode must be compact, auto, lossless, or copy-only")
         self.info = info
         self.timeline = timeline
         self.threads = threads
-        self.policy = (bind_encoder_build(policy) if policy else
+        self.policy = (bind_encoder_build(policy) if policy and bind_reference_encoder else policy) or (
                        resolve_policy(mode, source_codec=info.video["codec_name"], threads=threads))
         if self.policy.mode != mode:
             raise ValueError("Export policy mode differs from the requested mode")

@@ -310,7 +310,7 @@ class ProgressCoordinator:
 
     def _accept(self, event: ProgressEvent) -> None:
         with self.lock:
-            if event.event in TERMINAL_EVENTS or event.event == "scene_certified":
+            if event.event in TERMINAL_EVENTS:
                 self._observe_storage()
             if event.event in TERMINAL_EVENTS:
                 event = replace(

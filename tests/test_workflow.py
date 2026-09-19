@@ -162,6 +162,19 @@ def test_compact_stream_copy_is_reverified_under_the_exact_copy_contract(tmp_pat
     assert result['scenes'][1]['video']['pixel_equality'] == 'equal'
 
 
+def test_compact_whole_file_copy_verifies_after_encoder_build_changes(source_video, tmp_path, monkeypatch):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video, verify_job
+
+    out = tmp_path / 'whole-copy-job'
+    process_video(source_video, out, Config(threads=1), cuts=[], mode='compact')
+    certificate = json.loads((out / 'certificates/0001.json').read_text())
+    assert certificate['method'] == 'whole-file-copy'
+    monkeypatch.setattr('framecleave.media.ffmpeg_build_fingerprint', lambda: '0' * 64)
+
+    assert verify_job(source_video, out / 'scene-index.json')['verified'] is True
+
+
 def test_workflow_annotates_every_gray_card_frame_without_changing_partition(tmp_path):
     import subprocess
     from framecleave.config import Config

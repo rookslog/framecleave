@@ -98,12 +98,10 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
     for number, item in enumerate(selected):
         command += ['-threads', str(threads), '-protocol_whitelist', 'file,pipe,crypto', '-i', item['path']]
         duration = f"{float(Fraction(item['source_range']['duration_rational'])):.12f}"
-        origin = f"{float(Fraction(item['visible_origin_rational'])):.12f}"
-        end = f"{float(Fraction(item['visible_origin_rational']) + Fraction(item['source_range']['duration_rational'])):.12f}"
-        graph.append(f'[{number}:v:0]trim=start={origin}:end={end},setpts=PTS-({origin})/TB[v{number}]')
+        graph.append(f'[{number}:v:0]trim=start=0:duration={duration},setpts=PTS-STARTPTS[v{number}]')
         labels.append(f'[v{number}]')
         for track in range(audio_count):
-            graph.append(f'[{number}:a:{track}]atrim=start={origin}:end={end},asetpts=PTS-({origin})/TB,'
+            graph.append(f'[{number}:a:{track}]atrim=start=0:duration={duration},asetpts=PTS,'
                          f'aresample=async=1:first_pts=0,apad=whole_dur={duration},atrim=duration={duration}[a{number}_{track}]')
             labels.append(f'[a{number}_{track}]')
     destinations = '[v]' + ''.join(f'[a{i}]' for i in range(audio_count))

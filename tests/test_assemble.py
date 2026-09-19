@@ -36,6 +36,25 @@ def test_assemble_selected_copies_once_without_originals(review_source, tmp_path
     assert not any(p.suffix in {'.wav', '.f32le', '.s16le'} for p in tmp_path.rglob('*'))
 
 
+def test_assemble_normalizes_nonzero_container_start_time(tmp_path):
+    from framecleave.assemble import assemble
+
+    source = tmp_path / 'offset.mp4'
+    run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+         'testsrc2=size=160x120:rate=30:duration=2', '-c:v', 'libx264',
+         '-threads', '1', '-output_ts_offset', '5', str(source)])
+    job = tmp_path / 'review'
+    process_video(source, job, Config(threads=1), cuts=[], mode='review-copy')
+    target = tmp_path / 'assembled.mp4'
+
+    assemble([job / 'scene-index.json'], [(1, 1)], target, threads=1)
+
+    count = json.loads(run(['ffprobe', '-v', 'error', '-count_frames',
+        '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames',
+        '-of', 'json', str(target)]))
+    assert int(count['streams'][0]['nb_read_frames']) == 60
+
+
 def test_assemble_budget_failure_preserves_copies(source_video, tmp_path):
     from framecleave.assemble import assemble
 

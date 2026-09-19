@@ -322,7 +322,9 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
                 'verification_scope': 'file-integrity-and-stream-inventory',
                 'pixel_equality': 'not_applicable', 'audio_sample_equality': 'not_applicable'}
     with tempfile.TemporaryDirectory(prefix='framecleave-verify-') as temporary:
-        with ExportSession(info, timeline, Path(temporary), threads=threads, mode=policy.mode, policy=policy) as session:
+        with ExportSession(info, timeline, Path(temporary), threads=threads, mode=policy.mode, policy=policy,
+                           bind_reference_encoder=any(method == 'compact-reencode'
+                                                      for method in methods.values())) as session:
             for scene in index['scenes']:
                 if not scene.get('output_file'):
                     raise ValueError('Cannot verify an unexported scene')

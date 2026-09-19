@@ -5,6 +5,43 @@ import sys
 import pytest
 
 
+def test_tty_status_line_finishes_before_success_result(monkeypatch, tmp_path):
+    import io
+    from framecleave import cli
+    from framecleave.progress import ProgressEvent
+
+    writes = []
+
+    class RecordedStream(io.StringIO):
+        def __init__(self, name, *, tty=False):
+            super().__init__()
+            self.name = name
+            self.tty = tty
+
+        def isatty(self):
+            return self.tty
+
+        def write(self, value):
+            writes.append((self.name, value))
+            return super().write(value)
+
+    def process_video(*args, progress, **kwargs):
+        progress.emit(ProgressEvent(run_id='run', event='job_finished', phase='complete',
+                                    sequence=0, job_id='generated', outcome='success'))
+        return {'status': 'inspected', 'scene_count': 1, 'review_candidates': 0,
+                'output': str(tmp_path / 'out')}
+
+    monkeypatch.setattr('framecleave.workflow.process_video', process_video)
+    monkeypatch.setattr(cli.sys, 'stderr', RecordedStream('stderr', tty=True))
+    monkeypatch.setattr(cli.sys, 'stdout', RecordedStream('stdout'))
+
+    assert cli.main(['inspect', 'generated.mp4', '-o', str(tmp_path / 'out')]) == 0
+    newline = next(i for i, item in enumerate(writes) if item == ('stderr', '\n'))
+    result = next(i for i, (stream, value) in enumerate(writes)
+                  if stream == 'stdout' and 'inspected:' in value)
+    assert newline < result
+
+
 def call_cli(*args):
     return subprocess.run([sys.executable, '-m', 'framecleave', *map(str, args)], capture_output=True, text=True)
 
