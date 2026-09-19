@@ -4,7 +4,8 @@ Only synthetic evaluation evidence is publishable. Private labels, source hashes
 timings and aggregate results stay local along with footage/reports. Read the
 [publication guidelines](publication.md) before publishing.
 
-The current artifact is **0.1.0rc1**. This is a working, tested engineering candidate,
+The current source candidate is **0.2.0rc1**; the supplied 0.1.0rc1 delivery artifacts
+are historical and are not overwritten. This is an engineering candidate,
 not a completed qualification for unattended processing on macOS 27. The release
 status is intentional; passing the generated-media suite does not erase real detector
 errors, provisional labels, or missing target-hardware measurements.
@@ -18,36 +19,33 @@ errors, provisional labels, or missing target-hardware measurements.
 - Linux and macOS-26-arm64 CI definitions, plus a separate manually dispatched
   **self-hosted macOS-27-arm64** validation workflow. macOS 26 is not mislabelled 27.
 - An artifact-only release workflow. It has no registry publishing or public-release
-  permissions. No PyPI name, public repository or external release was created.
+  permissions. No package-registry publication is authorized by this workflow.
 
-CI definitions have not run on GitHub in this environment. Ruff configuration is
-provided, but the Ruff executable could not be acquired here, so a local Ruff pass is
-not claimed. The local pytest/build/install results are recorded separately.
+Local generated-media tests and Ruff now run on Apple-Silicon macOS with FFmpeg 9.0.1.
+Current check/build/install receipts are recorded in the feature plan. Remote CI and
+consumer-player qualification must be reported separately, not inferred from local tests.
 
 ## Installation for users
 
 From the supplied wheel in a native Apple-Silicon terminal:
 
 ```sh
-brew install ffmpeg@7 uv
-export PATH="$(brew --prefix ffmpeg@7)/bin:$PATH"
-uv tool install --python 3.13 ./framecleave-0.1.0rc1-py3-none-any.whl
+brew install ffmpeg uv
+uv tool install --python 3.13 ./framecleave-0.2.0rc1-py3-none-any.whl
 framecleave doctor
 framecleave --help
 ```
 
 Python 3.13 is the version exercised here. The package declares Python >=3.11; other
-supported versions and actual macOS installation still require their own qualification.
-The versioned FFmpeg formula is keg-only; keep its `bin` directory on PATH in shells
-that run FrameCleave. It matches the tested 7.1.x family, not a claim that the macOS
-binary itself was tested. Homebrew's current default is 9.0.1; that version remains an
-additional compatibility gate. The wheel is Python-only; NumPy/OpenCV's platform wheels must resolve to native arm64.
+supported Python versions still require their own qualification. FFmpeg 7 or later is
+required; the current local feature gate uses 9.0.1. Keep the selected executable on PATH.
+The wheel is Python-only; NumPy/OpenCV's platform wheels must resolve to native arm64.
 FFmpeg is a separate system dependency. `doctor` reports architecture, actual OpenCV
 build/distribution conflicts, executable versions and available encoders. It does not
 pretend that merely listing VideoToolbox validates it.
 
 For a source installation use `uv tool install --python 3.13 .` in the repository.
-With pipx already configured, `pipx install ./framecleave-0.1.0rc1-py3-none-any.whl`
+With pipx already configured, `pipx install ./framecleave-0.2.0rc1-py3-none-any.whl`
 is an alternative. Neither command requires a public package registry entry for
 FrameCleave; fetching third-party dependencies still requires normal network access.
 
@@ -60,7 +58,6 @@ python -m pip install -r requirements-dev.txt -e .
 framecleave doctor
 pytest
 ruff check .
-ruff format --check .
 python scripts/audit_release.py
 export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
 python -m build
@@ -93,7 +90,15 @@ a claim of a fresh online installation of official upstream archives.
 
 These are open gates, not background tasks or promises that work is continuing elsewhere.
 
-## Private remote creation
+## Repository and PR boundary
+
+The owner authorized moving the Git checkout to `~/Development/framecleave` and creating
+the public `rookslog/framecleave` repository. Private videos, reports, generated media
+and run artifacts stay outside Git/packages. Feature work belongs on
+`feat/compact-export-and-progress`, with coherent audited commits and a draft PR;
+merging, tagging and registry publication are separate actions.
+
+The original delivery bundle remains available for recovery:
 
 The supplied Git bundle retains history without requiring access to the development
 container:
@@ -104,7 +109,5 @@ cd framecleave
 git status
 ```
 
-No remote is configured. A later authenticated maintainer can create an **empty private**
-repository and push `main` after the artifact/privacy audit. Keep registry publication
-and switching repository visibility as distinct, explicit decisions. The project name
-has not been reserved and the name search was not trademark clearance.
+The current checkout has a configured public remote. The old bundle itself is unchanged.
+The project name has not been registered; the earlier name search was not trademark clearance.

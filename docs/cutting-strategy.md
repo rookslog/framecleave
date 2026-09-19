@@ -1,4 +1,29 @@
-# Exact cutting and preservation policy
+# Review copying and explicit exact preservation policy
+
+## Default review-copy policy (0.2.0rc1)
+
+Ordinary CLI splitting uses input-seek MP4 video/audio packet copying for H.264/HEVC,
+without encoders, canonical PCM or reference-cache files. Unsplit whole files retain
+their original bytes/container. Requested source ranges stay in certificates, separate
+from physically copied packet/GOP boundaries. Muxing/inventory failure fails the job;
+there is no encoding fallback. Auxiliary streams and chapters are not preserved in
+partial review copies; this is a review-media policy, not an archival one.
+
+Review `verify` checks source identity, segmentation/intended ranges, clip hashes and
+stream inventory. Pixel/sample equality and exact decoded boundaries are not applicable.
+Final selected assembly independently decodes copies, trims recorded visible durations
+and encodes once at CRF16/18 plus AAC. Compatible video/audio layouts are required.
+No original-backed decode, intermediate joined movie or raw audio cache is required.
+Packet-copy edges and audio joins remain approximate; consumer-player and corrupted-tail
+behavior are not generally qualified. See [stream-copy experiments](streamcopy-research.md).
+
+Review temporary files use pre-growth byte reservations plus an OS-enforced FFmpeg
+file-size limit. The 1.5× logical temporary-byte cap includes scripts, unfinished media
+and atomic metadata, with batch-parent space reserved inside the total input allowance.
+Published outputs/logs are excluded. Explicit exact/compact modes below do not inherit
+this storage bound. Final size is CRF-dependent, not capped at a source-size ratio.
+
+## Explicit exact modes: auto, lossless and copy-only
 
 Correct decoded boundaries take precedence over compressed-byte copying. FFmpeg seek
 options alone are not proof of exactness. Every exported scene must decode to exactly
@@ -73,8 +98,7 @@ jitter without silently smoothing a real gap or drift. Missing/unsupported audio
 or discontinuous clocks are rejected. Actual 44.1/48 kHz and multiple-stream tests cover
 different clocks and a delayed stream. No-audio video is supported.
 
-Audio packet copying could avoid this conversion when a suitable codec/container cut
-is independently proven safe, but is not implemented for partial scenes. The choice
+Audio packet copying is used by review-copy, not by these sample-exact partial paths. The choice
 preserves decoded sound and synchronization at the cost of file size and original codec.
 
 ## Explicit refusals and remaining risks

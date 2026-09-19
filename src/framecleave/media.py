@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import deque
+from contextlib import ExitStack
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
@@ -18,6 +19,8 @@ from typing import Iterator
 
 import numpy as np
 
+from .tempbudget import reserve_temp
+
 LOG = logging.getLogger(__name__)
 
 
@@ -27,6 +30,13 @@ class MediaError(RuntimeError):
 
 class PreservationError(MediaError):
     """Cannot export without an unapproved loss of media characteristics."""
+
+
+def hdr_metadata_present(metadata: dict) -> bool:
+    side = str(metadata.get('side_data_list', [])).lower()
+    return metadata.get('color_transfer') in {'smpte2084', 'arib-std-b67'} or any(
+        key in side for key in ['dovi', 'dolby', 'mastering', 'content light', 'hdr', 'dynamic hdr']
+    )
 
 
 def executable(name: str) -> str:
@@ -40,10 +50,10 @@ def ffmpeg_base(*, level: str = "error") -> list[str]:
     return [executable("ffmpeg"), "-nostdin", "-hide_banner", "-loglevel", level, "-xerror"]
 
 
-def run(command: list[str], *, timeout: float | None = None) -> bytes:
+def run(command: list[str], *, timeout: float | None = None, cwd: Path | None = None) -> bytes:
     """Run an argv, never a shell. Capture errors and kill children on cancellation."""
     LOG.debug("exec %s", json.dumps(command, ensure_ascii=False))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
     try:
         out, err = process.communicate(timeout=timeout)
     except BaseException:
@@ -63,6 +73,14 @@ def sha256_file(path: Path) -> str:
     with Path(path).open("rb") as handle:
         for block in iter(lambda: handle.read(4 * 1024 * 1024), b""):
             digest.update(block)
+    return digest.hexdigest()
+
+
+def ffmpeg_build_fingerprint() -> str:
+    """Bind deterministic reference encoding to the executable and version report."""
+    path = executable('ffmpeg')
+    digest = hashlib.sha256(run([path, '-version'], timeout=10))
+    digest.update(sha256_file(Path(path)).encode())
     return digest.hexdigest()
 
 
@@ -164,12 +182,18 @@ def iter_video(
         if not selected:
             return
     filters = f"scale={width}:{height}:flags=area,format=rgb24,showinfo"
-    temporary = tempfile.TemporaryDirectory(prefix="framecleave-filter-")
-    script = Path(temporary.name) / "filter.txt"
     if selected is not None:
         expression = selection_expression(selected)
         filters = f"select='{expression}'," + filters
-    script.write_text(filters, encoding="utf-8")
+    resources = ExitStack()
+    try:
+        resources.enter_context(reserve_temp(len(filters.encode('utf-8'))))
+        temporary = resources.enter_context(tempfile.TemporaryDirectory(prefix="framecleave-filter-"))
+        script = Path(temporary) / 'filter.txt'
+        script.write_text(filters, encoding="utf-8")
+    except BaseException:
+        resources.close()
+        raise
     command = ffmpeg_base(level="info") + [
         "-err_detect", "explode", "-threads", str(threads),
         "-protocol_whitelist", "file,pipe,crypto", "-copyts", "-noautorotate", "-i", str(info.path),
@@ -180,7 +204,11 @@ def iter_video(
     if selected is not None:
         command[-1:-1] = ["-frames:v", str(len(selected))]
     LOG.debug("exec %s", json.dumps(command))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except BaseException:
+        resources.close()
+        raise
     metadata: queue.Queue = queue.Queue()
     errors: deque[str] = deque(maxlen=30)
     bases: list[Fraction] = []
@@ -245,7 +273,7 @@ def iter_video(
         worker.join(timeout=5)
         if process.stderr:
             process.stderr.close()
-        temporary.cleanup()
+        resources.close()
 
 
 def video_hashes(info: MediaInfo, *, threads: int = 2) -> list[dict]:
@@ -293,10 +321,7 @@ def audit_frame_metadata(info: MediaInfo, *, threads: int = 2) -> dict:
     if not frames:
         raise MediaError('No native frame metadata could be audited')
     for number, frame in enumerate(frames):
-        side = str(frame.get('side_data_list', [])).lower()
-        if frame.get('color_transfer') in {'smpte2084', 'arib-std-b67'} or any(
-            key in side for key in ['dovi', 'dolby', 'mastering', 'content light', 'hdr', 'dynamic hdr']
-        ):
+        if hdr_metadata_present(frame):
             raise PreservationError(f'HDR side data at source frame {number} is not supported for re-encoding')
         if frame.get('interlaced_frame'):
             raise PreservationError(f'Interlaced source frame {number} is not supported for re-encoding')

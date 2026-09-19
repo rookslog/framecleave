@@ -3,6 +3,16 @@ from fractions import Fraction
 import pytest
 
 
+@pytest.mark.parametrize('marker', ['DOVI configuration record', 'Mastering display metadata',
+                                    'Content light level metadata', 'Dynamic HDR Plus'])
+def test_hdr_metadata_predicate_catches_side_data_without_hdr_transfer(marker):
+    from framecleave.media import hdr_metadata_present
+
+    assert hdr_metadata_present({'color_transfer': 'bt709',
+                                 'side_data_list': [{'side_data_type': marker}]}) is True
+    assert hdr_metadata_present({'color_transfer': 'bt709', 'side_data_list': []}) is False
+
+
 def test_probe_reports_actual_streams_and_hash(source_video):
     from framecleave.media import probe
     media = probe(source_video)

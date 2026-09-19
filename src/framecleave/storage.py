@@ -8,21 +8,44 @@ import socket
 import tempfile
 import uuid
 
+from .tempbudget import Reservation, reserve_temp
 
-def atomic_bytes(path: Path, payload: bytes) -> None:
+
+class _ReservedWriter:
+    def __init__(self, handle, reservation):
+        self.handle = handle
+        self.reservation = reservation
+
+    def write(self, payload):
+        self.reservation.grow(self.handle.tell()+len(payload))
+        return self.handle.write(payload)
+
+    def __getattr__(self, name):
+        # Do not expose truncate: writers must use checked writes to grow files.
+        if name == 'truncate':
+            raise AttributeError(name)
+        return getattr(self.handle, name)
+
+
+def atomic_write(path: Path, writer) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_symlink():
         raise FileExistsError(f"Refusing to replace a symlink: {path}")
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
-    try:
-        with os.fdopen(fd, 'wb') as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    with reserve_temp(0) as reservation:
+        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+        try:
+            with os.fdopen(fd, 'wb') as handle:
+                writer(_ReservedWriter(handle, reservation))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+
+def atomic_bytes(path: Path, payload: bytes) -> None:
+    atomic_write(path, lambda handle: handle.write(payload))
 
 
 def atomic_json(path: Path, value: dict) -> None:
@@ -36,6 +59,7 @@ class JobDirectory:
         self.resume = resume
         self.token = uuid.uuid4().hex
         self.owned = False
+        self.lock_reservation = None
 
     def __enter__(self) -> Path:
         if self.path.is_symlink():
@@ -56,8 +80,10 @@ class JobDirectory:
             except (ValueError, KeyError, PermissionError):
                 pass
         try:
-            with lock.open('x', encoding='utf-8') as handle:
-                json.dump({'pid': os.getpid(), 'host': socket.gethostname(), 'token': self.token}, handle)
+            payload = json.dumps({'pid': os.getpid(), 'host': socket.gethostname(), 'token': self.token}).encode('utf-8')
+            self.lock_reservation = Reservation(len(payload))
+            with lock.open('xb') as handle:
+                handle.write(payload)
             self.owned = True
             others = [p for p in self.path.iterdir() if p.name != '.lock']
             if not self.resume and others:
@@ -78,17 +104,23 @@ class JobDirectory:
             except (FileNotFoundError, ValueError):
                 pass
             self.owned = False
+        if self.lock_reservation is not None:
+            self.lock_reservation.close()
+            self.lock_reservation = None
 
 
 class JobLog:
     """Per-job diagnostics; call only after acquiring that job's process lock."""
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, *, filename: str = 'diagnostics.log'):
         self.directory = directory
+        if Path(filename).name != filename:
+            raise ValueError('Diagnostic filename must be a basename')
+        self.filename = filename
         self.handler = None
 
     def __enter__(self):
         import logging
-        path = self.directory / 'diagnostics.log'
+        path = self.directory / self.filename
         if path.is_symlink():
             raise FileExistsError('Diagnostic log must not be a symlink')
         self.handler = logging.FileHandler(path, encoding='utf-8')

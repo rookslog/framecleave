@@ -2,6 +2,45 @@ import json
 import subprocess
 import sys
 
+import pytest
+
+
+def test_tty_status_line_finishes_before_success_result(monkeypatch, tmp_path):
+    import io
+    from framecleave import cli
+    from framecleave.progress import ProgressEvent
+
+    writes = []
+
+    class RecordedStream(io.StringIO):
+        def __init__(self, name, *, tty=False):
+            super().__init__()
+            self.name = name
+            self.tty = tty
+
+        def isatty(self):
+            return self.tty
+
+        def write(self, value):
+            writes.append((self.name, value))
+            return super().write(value)
+
+    def process_video(*args, progress, **kwargs):
+        progress.emit(ProgressEvent(run_id='run', event='job_finished', phase='complete',
+                                    sequence=0, job_id='generated', outcome='success'))
+        return {'status': 'inspected', 'scene_count': 1, 'review_candidates': 0,
+                'output': str(tmp_path / 'out')}
+
+    monkeypatch.setattr('framecleave.workflow.process_video', process_video)
+    monkeypatch.setattr(cli.sys, 'stderr', RecordedStream('stderr', tty=True))
+    monkeypatch.setattr(cli.sys, 'stdout', RecordedStream('stdout'))
+
+    assert cli.main(['inspect', 'generated.mp4', '-o', str(tmp_path / 'out')]) == 0
+    newline = next(i for i, item in enumerate(writes) if item == ('stderr', '\n'))
+    result = next(i for i, (stream, value) in enumerate(writes)
+                  if stream == 'stdout' and 'inspected:' in value)
+    assert newline < result
+
 
 def call_cli(*args):
     return subprocess.run([sys.executable, '-m', 'framecleave', *map(str, args)], capture_output=True, text=True)
@@ -11,10 +50,34 @@ def test_help_version_and_diagnostics():
     result=call_cli('--help')
     assert result.returncode == 0
     assert all(name in result.stdout for name in ['inspect','split','batch','verify','doctor'])
-    assert '0.1.0rc1' in call_cli('--version').stdout
+    assert '0.2.0rc1' in call_cli('--version').stdout
     result=call_cli('doctor','--json')
     assert result.returncode == 0
     assert json.loads(result.stdout)['backend'] == 'software-cpu'
+
+
+@pytest.mark.parametrize('flag', ['--quiet', '--verbose', '--debug'])
+def test_presentation_flags_are_accepted_and_keep_stdout_machine_readable(flag):
+    result = call_cli('doctor', flag, '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['ok'] is True
+    assert result.stdout.count('\n') == 1
+
+
+def test_presentation_flags_are_mutually_exclusive():
+    result = call_cli('doctor', '--verbose', '--debug')
+    assert result.returncode == 2
+
+
+@pytest.mark.parametrize('flag', [None, '--verbose', '--debug'])
+def test_progress_modes_never_write_progress_to_stdout(flag):
+    args = ['doctor', '--json']
+    if flag:
+        args.insert(1, flag)
+    result = call_cli(*args)
+    assert result.returncode == 0, result.stderr
+    assert list(json.loads(result.stdout))
+    assert result.stdout.count('\n') == 1
 
 
 def test_split_dry_run_cli_and_wrong_cuts(source_video,tmp_path):
@@ -25,6 +88,25 @@ def test_split_dry_run_cli_and_wrong_cuts(source_video,tmp_path):
     result=call_cli('split',source_video,'-o',tmp_path/'bad','--cuts','7,7')
     assert result.returncode == 2
     assert 'Traceback' not in result.stderr
+
+
+def test_split_progress_modes_keep_recovered_diagnostics_bounded(source_video, tmp_path):
+    default = call_cli('split', source_video, '-o', tmp_path / 'default', '--cuts', '30,60', '--mode', 'auto', '--json')
+    assert default.returncode == 0, default.stderr
+    assert 'Non-monotonic DTS' not in default.stderr
+    assert 'attempt rejected' not in default.stderr
+
+    verbose = call_cli('split', source_video, '-o', tmp_path / 'verbose', '--cuts', '30,60',
+                       '--verbose', '--mode', 'auto', '--json')
+    assert verbose.returncode == 0, verbose.stderr
+    assert 'attempt rejected' in verbose.stderr
+    assert 'Non-monotonic DTS' not in verbose.stderr
+
+    debug = call_cli('split', source_video, '-o', tmp_path / 'debug', '--cuts', '30,60',
+                     '--debug', '--mode', 'auto', '--json')
+    assert debug.returncode == 0, debug.stderr
+    assert 'DEBUG: exec' in debug.stderr
+    assert json.loads(debug.stdout)['status'] == 'complete'
 
 
 def test_batch_isolates_failure_and_resumes(source_video,tmp_path):
@@ -43,12 +125,75 @@ def test_batch_isolates_failure_and_resumes(source_video,tmp_path):
     assert json.loads(result.stdout)['succeeded'] == 1
 
 
+@pytest.mark.parametrize('jobs', [1, 2])
+def test_batch_events_are_parent_serialized_for_all_job_counts(source_video, tmp_path, jobs):
+    import shutil
+
+    inputs = tmp_path / f'inputs-{jobs}'
+    inputs.mkdir()
+    shutil.copy(source_video, inputs / 'one.mp4')
+    shutil.copy(source_video, inputs / 'two.mp4')
+    output = tmp_path / f'out-{jobs}'
+    result = call_cli('batch', inputs, '-o', output, '--dry-run', '--jobs', jobs, '--json')
+    assert result.returncode == 0, result.stderr
+    lines = (output / 'batch-events.jsonl').read_text().splitlines()
+    events = [json.loads(line) for line in lines]
+    assert {'batch_started', 'job_started', 'job_finished', 'batch_finished'} <= {
+        event['event'] for event in events
+    }
+    assert all('ffmpeg stderr' not in json.dumps(event) for event in events)
+    summary = json.loads((output / 'batch-summary.json').read_text())
+    assert summary['pending'] == 0
+    assert summary['active'] == 0
+    assert summary['succeeded'] == 2
+    assert summary['event_log'] == 'batch-events.jsonl'
+    assert summary['current_bytes'] > 0
+    assert summary['peak_bytes'] >= summary['current_bytes']
+
+
 def test_verify_redecodes_outputs(source_video,tmp_path):
-    result=call_cli('split',source_video,'-o',tmp_path/'out','--cuts','7,47','--quiet')
+    result=call_cli('split',source_video,'-o',tmp_path/'out','--cuts','7,47','--mode','auto','--quiet')
     assert result.returncode == 0,result.stderr
     result=call_cli('verify',source_video,tmp_path/'out'/'scene-index.json','--json')
     assert result.returncode == 0,result.stderr
     assert json.loads(result.stdout)['verified']
+
+
+def test_default_cli_copies_review_slices_then_assembles_selection(source_video, tmp_path):
+    job = tmp_path / 'review'
+    result = call_cli('split', source_video, '-o', job, '--cuts', '7,47', '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['policy']['mode'] == 'review-copy'
+    assert not (job / 'scratch').exists()
+    result = call_cli('verify', source_video, job / 'scene-index.json')
+    assert result.returncode == 0, result.stderr
+    assert 'integrity' in result.stdout
+    assert 'samples match' not in result.stdout
+    result = call_cli('assemble', job / 'scene-index.json', '--scenes', '1,3', '-o', tmp_path / 'final.mp4', '--json')
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)['selected_scene_count'] == 2
+
+
+def test_cli_assembly_selection_rejects_zero_or_ambiguous_job_reference():
+    assert call_cli('assemble', 'one.json', '--scenes', '0', '-o', 'out.mp4').returncode == 2
+    assert call_cli('assemble', 'one.json', 'two.json', '--scenes', '1', '-o', 'out.mp4').returncode == 2
+
+
+@pytest.mark.parametrize('jobs', [1, 2])
+def test_review_batch_reserves_parent_metadata_within_input_budget(source_video, tmp_path, jobs):
+    import shutil
+    inputs = tmp_path / 'inputs'
+    inputs.mkdir()
+    shutil.copy(source_video, inputs / 'one.mp4')
+    shutil.copy(source_video, inputs / 'two.mp4')
+    result = call_cli('batch', inputs, '-o', tmp_path / 'out', '--jobs', jobs, '--json')
+    assert result.returncode == 0, result.stderr
+    summary = json.loads(result.stdout)
+    budget = summary['temporary_storage']
+    expected_limit = sum(path.stat().st_size * 3 // 2 for path in inputs.iterdir())
+    assert budget['limit_bytes'] == expected_limit
+    assert budget['parent_peak_reserved_bytes'] <= budget['parent_reserve_bytes']
+    assert sum(f['temporary_storage']['limit_bytes'] for f in summary['files']) + budget['parent_reserve_bytes'] == budget['limit_bytes']
 
 
 def test_ctrl_c_releases_lock_and_keeps_a_resumable_state(source_video, tmp_path):
