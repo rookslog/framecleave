@@ -10,7 +10,7 @@ import time
 import uuid
 
 from .limited_process import run_limited
-from .media import MediaInfo, executable, probe
+from .media import MediaInfo, PreservationError, audit_frame_metadata, executable, hdr_metadata_present, probe
 from .model import read_index, validate_index
 from .progress import ProgressReporter, ProgressSink
 from .review_copy import validate_review_certificate
@@ -73,8 +73,9 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
                    [[a.get(k) for k in ['sample_rate', 'channels', 'channel_layout']] for a in actual.audio])
         if actual.video['codec_name'] not in {'h264', 'hevc'}:
             raise ValueError('Final assembly supports H.264/HEVC')
-        if actual.video.get('color_transfer') in {'smpte2084', 'arib-std-b67'}:
-            raise ValueError('HDR final assembly is not qualified; no normalization attempted')
+        if hdr_metadata_present(actual.video):
+            raise PreservationError('HDR final assembly is not qualified; no normalization attempted')
+        audit_frame_metadata(actual, threads=threads)
         if layout is not None and current != layout:
             raise ValueError('Selected video geometry/color/codec or audio layouts differ; no normalization attempted')
         layout = current

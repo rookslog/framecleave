@@ -67,3 +67,60 @@ def test_transition_decisions_default_to_keep_and_reject_invalid_overrides():
     for overrides in [['2=omit', '2=keep'], ['1=omit'], ['99=omit'], ['2=delete']]:
         with pytest.raises(ValueError):
             resolve_transition_decisions(scenes, overrides=overrides)
+
+
+def test_audio_activity_seeks_before_late_interval_but_keeps_absolute_trim(monkeypatch, tmp_path):
+    import io
+    from fractions import Fraction
+    from framecleave.media import MediaInfo
+    from framecleave.transitions import _audio_activity
+
+    commands = []
+
+    class Process:
+        def __init__(self, command, **kwargs):
+            commands.append(command)
+            self.returncode = 0
+            self.stderr = io.BytesIO(b'RMS level dB: -20.0\n')
+
+        def wait(self):
+            return self.returncode
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    source = tmp_path / 'generated.mp4'
+    source.touch()
+    info = MediaInfo(source, {'streams': [
+        {'index': 0, 'codec_type': 'video', 'width': 16, 'height': 16, 'time_base': '1/30'},
+        {'index': 1, 'codec_type': 'audio'},
+    ]}, '')
+    monkeypatch.setattr('framecleave.transitions.subprocess.Popen', Process)
+
+    assert _audio_activity(info, Fraction(10), Fraction(21, 2), 1) == pytest.approx(.1)
+    command = commands[0]
+    assert command.index('-ss') < command.index('-i')
+    assert '-seek_timestamp' not in command
+    assert command[command.index('-ss') + 1] == '9.000000000000'
+    assert any(value.startswith('atrim=start=10.000000000000:end=10.500000000000,')
+               for value in command)
+
+
+def test_sought_audio_activity_preserves_nonzero_timestamp_evidence(tmp_path):
+    from fractions import Fraction
+    from framecleave.media import probe, run
+    from framecleave.transitions import _audio_activity
+
+    source = tmp_path / 'offset-audio.mp4'
+    run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+         'testsrc2=size=64x64:rate=30:duration=2', '-f', 'lavfi', '-i',
+         'sine=frequency=500:sample_rate=48000:duration=2', '-c:v', 'libx264',
+         '-threads', '1', '-c:a', 'aac', '-output_ts_offset', '5', str(source)])
+
+    activity = _audio_activity(probe(source), Fraction(6), Fraction(13, 2), 1)
+
+    assert activity is not None
+    assert activity > .01

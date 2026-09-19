@@ -32,6 +32,13 @@ class PreservationError(MediaError):
     """Cannot export without an unapproved loss of media characteristics."""
 
 
+def hdr_metadata_present(metadata: dict) -> bool:
+    side = str(metadata.get('side_data_list', [])).lower()
+    return metadata.get('color_transfer') in {'smpte2084', 'arib-std-b67'} or any(
+        key in side for key in ['dovi', 'dolby', 'mastering', 'content light', 'hdr', 'dynamic hdr']
+    )
+
+
 def executable(name: str) -> str:
     found = shutil.which(name)
     if found is None:
@@ -314,10 +321,7 @@ def audit_frame_metadata(info: MediaInfo, *, threads: int = 2) -> dict:
     if not frames:
         raise MediaError('No native frame metadata could be audited')
     for number, frame in enumerate(frames):
-        side = str(frame.get('side_data_list', [])).lower()
-        if frame.get('color_transfer') in {'smpte2084', 'arib-std-b67'} or any(
-            key in side for key in ['dovi', 'dolby', 'mastering', 'content light', 'hdr', 'dynamic hdr']
-        ):
+        if hdr_metadata_present(frame):
             raise PreservationError(f'HDR side data at source frame {number} is not supported for re-encoding')
         if frame.get('interlaced_frame'):
             raise PreservationError(f'Interlaced source frame {number} is not supported for re-encoding')

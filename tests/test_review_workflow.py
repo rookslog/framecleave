@@ -49,6 +49,28 @@ def test_review_verification_refuses_changed_media_or_intended_ranges(source_vid
 
 
 def test_internal_batch_allowance_cannot_raise_owner_budget(source_video, tmp_path):
+    from test_workflow import CollectingSink
+
+    sink = CollectingSink()
     with pytest.raises(ValueError, match='reserve'):
-        process_video(source_video, tmp_path / 'refused', Config(), cuts=[7], mode='review-copy', batch_temp_reserve=-1)
+        process_video(source_video, tmp_path / 'refused', Config(), cuts=[7], mode='review-copy',
+                      batch_temp_reserve=-1, progress=sink)
     assert not (tmp_path / 'refused').exists()
+    assert [event.event for event in sink.events].count('job_failed') == 1
+
+
+def test_job_cleanup_failure_emits_failure_instead_of_success(source_video, tmp_path, monkeypatch):
+    from test_workflow import CollectingSink
+
+    sink = CollectingSink()
+
+    def fail_cleanup(*args):
+        raise OSError('injected cleanup failure')
+
+    monkeypatch.setattr('framecleave.workflow.JobLog.__exit__', fail_cleanup)
+    with pytest.raises(OSError, match='cleanup failure'):
+        process_video(source_video, tmp_path / 'cleanup', Config(), cuts=[7], dry_run=True,
+                      mode='review-copy', progress=sink)
+    names = [event.event for event in sink.events]
+    assert names.count('job_failed') == 1
+    assert 'job_finished' not in names

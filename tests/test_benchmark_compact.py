@@ -78,6 +78,27 @@ def test_compact_benchmark_results_refuse_overwrite_and_symlinks(tmp_path):
     assert json.loads(result.read_text()) == {'new': True}
 
 
+def test_private_benchmark_rejects_aggregate_output_inside_repository(tmp_path, monkeypatch):
+    from scripts import benchmark_compact
+
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    private = tmp_path / 'private'
+    private.mkdir()
+    monkeypatch.setattr(benchmark_compact, 'PROJECT_ROOT', repository)
+
+    result = benchmark_compact.main([
+        '--private-directory', str(private),
+        '--raw-output', str(tmp_path / 'raw.json'),
+        '--work-directory', str(tmp_path / 'work'),
+        '--output', str(repository / 'aggregate.json'),
+    ])
+
+    assert result == 2
+    assert not (repository / 'aggregate.json').exists()
+    assert not (tmp_path / 'work').exists()
+
+
 def test_compact_benchmark_runs_real_full_coverage_with_native_float_audio(source_video, tmp_path):
     from scripts.benchmark_compact import benchmark_source
 

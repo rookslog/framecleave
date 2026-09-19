@@ -120,8 +120,18 @@ def _audio_activity(info: MediaInfo, start: Fraction, end: Fraction, threads: in
     peak = 0.0
     for stream in info.audio:
         command = ffmpeg_base(level='info') + [
-            '-nostats', '-threads', str(threads), '-copyts', '-protocol_whitelist', 'file,pipe,crypto',
-            '-i', str(info.path), '-map', f"0:{stream['index']}", '-vn', '-sn', '-dn',
+            '-nostats', '-threads', str(threads), '-copyts',
+        ]
+        try:
+            origin = Fraction(info.document.get('format', {}).get('start_time', '0'))
+        except (ValueError, ZeroDivisionError):
+            origin = Fraction()
+        seek = max(Fraction(), start - origin - 1)
+        if seek > 0:
+            command += ['-ss', f'{float(seek):.12f}']
+        command += [
+            '-protocol_whitelist', 'file,pipe,crypto', '-i', str(info.path),
+            '-map', f"0:{stream['index']}", '-vn', '-sn', '-dn',
             '-af', f'atrim=start={float(start):.12f}:end={float(end):.12f},astats=reset=0',
             '-f', 'null', '-',
         ]

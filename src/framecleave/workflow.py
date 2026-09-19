@@ -19,7 +19,7 @@ from .export import ExportSession, output_suffix, whole_scene
 from .media import MediaError, ffmpeg_build_fingerprint, probe, sha256_file
 from .model import SCHEMA_VERSION, read_index, validate_index
 from .policy import ExportPolicy, bind_encoder_build, certificate_policy, policy_digest, resolve_policy
-from .progress import ProgressReporter, ProgressSink
+from .progress import NullProgressSink, ProgressEvent, ProgressReporter, ProgressSink
 from .report import make_thumbnails, render_report
 from .review_copy import ReviewCopySession, validate_review_certificate
 from .storage import JobDirectory, JobLog, atomic_json, atomic_write
@@ -58,7 +58,108 @@ def _assert_contained(root: Path, path: Path) -> None:
         raise ValueError(f'Job asset escapes the output directory: {path}')
 
 
+def _without_encoder_build(request: dict) -> dict:
+    value = json.loads(json.dumps(request))
+    value.pop('policy_digest', None)
+    value.get('policy', {}).get('video', {})['encoder_build'] = None
+    return value
+
+
+def _copy_only_resume_policy(root: Path, state: dict, index_file: Path, request: dict,
+                             source: Path, threads: int) -> ExportPolicy | None:
+    recorded = state.get('request')
+    if not isinstance(recorded, dict) or _without_encoder_build(recorded) != _without_encoder_build(request):
+        return None
+    if not index_file.is_file() or index_file.is_symlink():
+        return None
+    index = read_index(index_file)
+    validate_index(index)
+    completed = state.get('completed')
+    expected = {str(scene['number']) for scene in index['scenes']}
+    if not isinstance(completed, dict) or set(completed) != expected:
+        return None
+    for scene in index['scenes']:
+        old = completed[str(scene['number'])]
+        output = root / old.get('path', '')
+        certificate_path = root / old.get('certificate', '')
+        for asset in [output, certificate_path]:
+            _assert_contained(root, asset)
+            if not asset.is_file() or asset.is_symlink():
+                return None
+        if sha256_file(output) != old.get('sha256') or sha256_file(certificate_path) != old.get('certificate_sha256'):
+            return None
+        certificate = json.loads(certificate_path.read_text(encoding='utf-8'))
+        if certificate.get('method') not in {'whole-file-copy', 'stream-copy-video'}:
+            return None
+        if certificate.get('output_sha256') != old.get('sha256'):
+            return None
+    verify_job(source, index_file, threads=threads)
+    return ExportPolicy.from_dict(recorded['policy'])
+
+
+class _JobLifecycleSink:
+    """Publish exactly one terminal job event, after successful cleanup."""
+
+    def __init__(self, sink: ProgressSink | None) -> None:
+        self.sink = sink or NullProgressSink()
+        self.last: ProgressEvent | None = None
+        self.pending_success: ProgressEvent | None = None
+        self.terminal = False
+
+    def emit(self, event: ProgressEvent) -> None:
+        self.last = event
+        if event.event == 'job_finished':
+            self.pending_success = event
+            return
+        if event.event == 'job_failed':
+            self.terminal = True
+        self.sink.emit(event)
+
+    def publish_success(self) -> None:
+        if self.pending_success is not None and not self.terminal:
+            self.sink.emit(self.pending_success)
+            self.terminal = True
+
+    def publish_failure(self, exc: BaseException) -> None:
+        self.pending_success = None
+        if self.terminal or self.last is None:
+            return
+        failure = ProgressEvent(
+            run_id=self.last.run_id,
+            event='job_failed',
+            phase='interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
+            sequence=self.last.sequence + 1,
+            job_id=self.last.job_id,
+            elapsed_seconds=self.last.elapsed_seconds,
+            outcome='failed',
+            reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'job-failed',
+        )
+        self.terminal = True
+        try:
+            self.sink.emit(failure)
+        except BaseException:
+            LOG.debug('Terminal job failure could not be emitted; preserving original error', exc_info=True)
+
+
 def process_video(source: Path, directory: Path, config: Config, *, dry_run: bool = False,
+                  thumbnails: bool = False, resume: bool = False, mode: str = 'auto',
+                  cuts: list[int] | None = None, index_path: Path | None = None,
+                  progress: ProgressSink | None = None, job_id: str | None = None,
+                  policy: ExportPolicy | None = None, batch_temp_reserve: int = 0) -> dict:
+    lifecycle = _JobLifecycleSink(progress)
+    try:
+        result = _process_video(source, directory, config, dry_run=dry_run, thumbnails=thumbnails,
+                                resume=resume, mode=mode, cuts=cuts, index_path=index_path,
+                                progress=lifecycle, job_id=job_id, policy=policy,
+                                batch_temp_reserve=batch_temp_reserve)
+    except BaseException as exc:
+        lifecycle.publish_failure(exc)
+        raise
+    lifecycle.publish_success()
+    return result
+
+
+def _process_video(source: Path, directory: Path, config: Config, *, dry_run: bool = False,
                   thumbnails: bool = False, resume: bool = False, mode: str = 'auto',
                   cuts: list[int] | None = None, index_path: Path | None = None,
                   progress: ProgressSink | None = None, job_id: str | None = None,
@@ -82,6 +183,7 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
     if type(batch_temp_reserve) is not int or batch_temp_reserve < 0:
         raise ValueError('Batch temporary reserve must be a nonnegative integer')
     request = _request(config, mode, cuts, index_path, resolved_policy)
+    copy_only_resume = False
     temp_limit = info.path.stat().st_size * 3 // 2 - batch_temp_reserve if mode == 'review-copy' else None
     with temporary_budget(temp_limit) as temp_budget, JobDirectory(directory, resume=resume) as root, JobLog(root):
         for asset in ['thumbnails', 'scenes', 'scratch', 'certificates', 'scene-index.json', 'state.json']:
@@ -95,7 +197,14 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
             if state.get('source_sha256') != info.sha256:
                 raise ValueError('Cannot resume: source digest differs from the original job')
             if state.get('request') != request:
-                raise ValueError('Cannot resume: tool version, configuration, cuts, index, or export mode changed')
+                recorded_policy = (_copy_only_resume_policy(root, state, index_file, request, info.path,
+                                                            config.threads)
+                                   if resume and mode == 'compact' else None)
+                if recorded_policy is None:
+                    raise ValueError('Cannot resume: tool version, configuration, cuts, index, or export mode changed')
+                resolved_policy = recorded_policy
+                request = state['request']
+                copy_only_resume = True
         else:
             state = {'schema_version': 1, 'source_sha256': info.sha256, 'request': request,
                      'status': 'started', 'completed': {}, 'run_count': 0}
@@ -184,7 +293,8 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
                 exporter = (ReviewCopySession(info, timeline, reporter=reporter, policy=resolved_policy)
                             if mode == 'review-copy' else
                             ExportSession(info, timeline, root / 'scratch', threads=config.threads, mode=mode,
-                                          reporter=reporter, diagnostics='diagnostics.log', policy=resolved_policy))
+                                          reporter=reporter, diagnostics='diagnostics.log', policy=resolved_policy,
+                                          bind_reference_encoder=not copy_only_resume))
                 with exporter as session:
                     for scene in index['scenes']:
                         key = str(scene['number'])
@@ -262,11 +372,17 @@ def process_video(source: Path, directory: Path, config: Config, *, dry_run: boo
             return result
         except BaseException as exc:
             state.update(status='interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed', error=str(exc))
-            atomic_json(state_path, state)
-            reporter.emit('job_failed', 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
-                          outcome='failed',
-                          reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'job-failed',
-                          diagnostics='diagnostics.log')
+            try:
+                atomic_json(state_path, state)
+            except BaseException:
+                LOG.debug('Failure state could not be persisted; preserving original error', exc_info=True)
+            try:
+                reporter.emit('job_failed', 'interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
+                              outcome='failed',
+                              reason_code='interrupted' if isinstance(exc, KeyboardInterrupt) else 'job-failed',
+                              diagnostics='diagnostics.log')
+            except BaseException:
+                LOG.debug('Terminal job failure could not be emitted; preserving original error', exc_info=True)
             raise
 
 

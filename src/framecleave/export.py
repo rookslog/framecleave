@@ -17,7 +17,8 @@ import tempfile
 import time
 
 from .audio import AudioSlice, audio_encoding, extract_audio, slice_track
-from .media import MediaError, MediaInfo, PreservationError, ffmpeg_base, probe, run, sha256_file, video_hashes, audit_frame_metadata
+from .media import (MediaError, MediaInfo, PreservationError, audit_frame_metadata, ffmpeg_base,
+                    hdr_metadata_present, probe, run, sha256_file, video_hashes)
 from .model import Timeline
 from .policy import ExportPolicy, bind_encoder_build, policy_digest, resolve_policy
 from .progress import ProgressReporter, ProgressSink
@@ -57,8 +58,7 @@ def check_preservation(info: MediaInfo) -> None:
         raise PreservationError("Interlaced export is not verified")
     if video.get("codec_name") not in {"h264", "hevc", "ffv1"}:
         raise PreservationError("Exact export currently supports H.264, HEVC and FFV1; detection is broader")
-    side = str(video.get("side_data_list", [])).lower()
-    if video.get("color_transfer") in {"smpte2084", "arib-std-b67"} or any(k in side for k in ("dovi", "dolby", "mastering", "content light", "hdr")):
+    if hdr_metadata_present(video):
         raise PreservationError("HDR/Dolby Vision side-data preservation is not verified; export refused")
     if video["codec_name"] == "ffv1" and info.time_base.denominator != 1000:
         raise PreservationError("FFV1 export requires the Matroska millisecond time base to avoid hidden timestamp quantization")

@@ -82,6 +82,22 @@ def test_assemble_refuses_overwrite_and_invalid_selection(source_video, tmp_path
         assemble([job / 'scene-index.json'], [(1, 99)], tmp_path / 'bad.mp4')
 
 
+def test_assemble_refuses_frame_level_hdr_metadata(source_video, tmp_path, monkeypatch):
+    import framecleave.assemble as assemble_module
+    from framecleave.media import PreservationError
+
+    job = tmp_path / 'review'
+    process_video(source_video, job, Config(), cuts=[], mode='review-copy')
+
+    def refuse(*args, **kwargs):
+        raise PreservationError('HDR side data at source frame 20 is not supported')
+
+    monkeypatch.setattr(assemble_module, 'audit_frame_metadata', refuse, raising=False)
+    with pytest.raises(PreservationError, match='HDR side data'):
+        assemble_module.assemble([job / 'scene-index.json'], [(1, 1)], tmp_path / 'final.mp4')
+    assert not (tmp_path / 'final.mp4').exists()
+
+
 def test_assemble_preserves_distinct_delayed_audio_onsets(tmp_path):
     from framecleave.assemble import assemble
     import numpy as np

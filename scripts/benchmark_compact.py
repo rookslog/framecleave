@@ -210,13 +210,19 @@ def main(argv=None) -> int:
     inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument('--generated', action='store_true', help='Generate the deterministic corpus (default).')
     inputs.add_argument('--private-directory', type=Path, help='Explicit permitted local originals; raw results stay private.')
-    parser.add_argument('-o', '--output', type=Path, required=True, help='Privacy-safe aggregate JSON.')
+    parser.add_argument('-o', '--output', type=Path, required=True,
+                        help='Aggregate JSON; private-run output must remain outside the repository.')
     parser.add_argument('--raw-output', type=Path, help='Separate local raw JSON, outside this repository for private runs.')
     parser.add_argument('--work-directory', type=Path, help='New directory retaining clips/certificates for visual review.')
     parser.add_argument('--threads', type=int, default=2)
     parser.add_argument('--force', action='store_true', help='Replace existing result JSON only; never replace media/work directories.')
     args = parser.parse_args(argv)
     try:
+        args.output = args.output.expanduser().resolve()
+        if args.raw_output is not None:
+            args.raw_output = args.raw_output.expanduser().resolve()
+        if args.work_directory is not None:
+            args.work_directory = args.work_directory.expanduser().resolve()
         if not 1 <= args.threads <= 64:
             raise ValueError('threads must be between 1 and 64')
         if args.output.is_symlink() or (args.output.exists() and not args.force):
@@ -225,8 +231,8 @@ def main(argv=None) -> int:
         if private and (args.raw_output is None or args.work_directory is None):
             raise ValueError('Private calibration requires --raw-output and --work-directory outside the repository')
         if private and any(path.resolve().is_relative_to(PROJECT_ROOT)
-                           for path in [args.raw_output, args.work_directory]):
-            raise ValueError('Private raw results and media must stay outside the repository')
+                           for path in [args.output, args.raw_output, args.work_directory]):
+            raise ValueError('Private aggregate, raw results, and media must stay outside the repository')
         if args.raw_output and (args.raw_output.is_symlink() or (args.raw_output.exists() and not args.force)):
             raise FileExistsError('Raw result already exists or is a symlink')
         with ExitStack() as stack:

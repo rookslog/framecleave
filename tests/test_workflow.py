@@ -175,6 +175,21 @@ def test_compact_whole_file_copy_verifies_after_encoder_build_changes(source_vid
     assert verify_job(source_video, out / 'scene-index.json')['verified'] is True
 
 
+def test_completed_compact_whole_file_copy_resumes_after_encoder_build_changes(source_video, tmp_path,
+                                                                                monkeypatch):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video
+
+    out = tmp_path / 'whole-copy-resume'
+    process_video(source_video, out, Config(threads=1), cuts=[], mode='compact')
+    monkeypatch.setattr('framecleave.media.ffmpeg_build_fingerprint', lambda: '0' * 64)
+
+    result = process_video(source_video, out, Config(threads=1), cuts=[], mode='compact', resume=True)
+
+    assert result['exported'] == 0
+    assert result['skipped_verified'] == 1
+
+
 def test_workflow_annotates_every_gray_card_frame_without_changing_partition(tmp_path):
     import subprocess
     from framecleave.config import Config
