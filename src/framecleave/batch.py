@@ -51,6 +51,14 @@ def _name(path: Path) -> str:
     return stem + '-' + hashlib.sha256(str(path).encode()).hexdigest()[:12]
 
 
+def _temp_limit(path: Path) -> int:
+    try:
+        return path.stat().st_size * 3 // 2 if path.is_file() else 0
+    except OSError:
+        # The worker owns the per-file failure if an ingest path disappears or changes.
+        return 0
+
+
 def _stop_worker(signum, frame):
     # Unwind Python context managers, including active FFmpeg processes and job locks.
     raise KeyboardInterrupt
@@ -82,7 +90,7 @@ def process_batch(inputs: list[Path], output: Path, config: Config, *, jobs: int
     if jobs * config.threads > (os.cpu_count() or 1):
         LOG.warning('jobs × threads exceeds available logical CPUs; lower --jobs or --threads to reduce pressure')
     options = dict(dry_run=dry_run, thumbnails=thumbnails, resume=resume, mode=mode)
-    limits = {p: p.stat().st_size * 3 // 2 if p.is_file() else 0 for p in paths}
+    limits = {p: _temp_limit(p) for p in paths}
     reserves = {p: min(1024**2, limit // 8) for p, limit in limits.items()} if mode == 'review-copy' else {}
     total_reserve = sum(reserves.values()) if mode == 'review-copy' else 0
     # A zero total (all inputs missing/empty) must not abort parent setup: the per-input

@@ -169,6 +169,20 @@ def test_worker_exit_after_finished_event_is_an_unconfirmed_failure():
     assert status.pending == 0
 
 
+def test_worker_lost_reclassifies_an_interrupted_terminal_as_failed():
+    status = BatchStatus(1)
+    status.apply(ProgressEvent(run_id='r', event='job_started', phase='starting', sequence=0,
+                               job_id='lost'))
+    status.apply(ProgressEvent(run_id='r', event='job_failed', phase='interrupted', sequence=1,
+                               job_id='lost', outcome='failed', reason_code='interrupted'))
+    assert status.interrupted == 1
+    assert status.failed == 0
+    status.apply(ProgressEvent(run_id='r', event='worker_lost', phase='failed', sequence=2,
+                               job_id='lost', outcome='failed', reason_code='worker-process-exited'))
+    assert status.interrupted == 0
+    assert status.failed == 1
+
+
 def test_progress_write_error_still_drains_transport_and_closes_sinks(tmp_path):
     from framecleave.progress import ProgressCoordinator
 

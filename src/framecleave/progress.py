@@ -164,6 +164,7 @@ class BatchStatus:
     free_bytes: int | None = None
     _terminal_jobs: set[str] = field(default_factory=set, repr=False)
     _successful_jobs: set[str] = field(default_factory=set, repr=False)
+    _interrupted_jobs: set[str] = field(default_factory=set, repr=False)
 
     def __post_init__(self) -> None:
         if type(self.total) is not int or self.total < 0:
@@ -179,6 +180,10 @@ class BatchStatus:
         if event.event == 'worker_lost' and job_id in self._successful_jobs:
             self._successful_jobs.remove(job_id)
             self.succeeded -= 1
+            self.failed += 1
+        elif event.event == 'worker_lost' and job_id in self._interrupted_jobs:
+            self._interrupted_jobs.remove(job_id)
+            self.interrupted -= 1
             self.failed += 1
         if event.event == "job_started" and job_id not in self.active_phases and job_id not in self._terminal_jobs:
             self.pending = max(0, self.pending - 1)
@@ -197,6 +202,7 @@ class BatchStatus:
                 self._successful_jobs.add(job_id)
             elif event.reason_code == "interrupted":
                 self.interrupted += 1
+                self._interrupted_jobs.add(job_id)
             else:
                 self.failed += 1
         if event.observed_bytes is not None:

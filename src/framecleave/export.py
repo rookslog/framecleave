@@ -213,11 +213,11 @@ class ExportSession:
         start_pts = self.timeline.endpoint(scene['start_frame'])
         end_pts = self.timeline.endpoint(scene['end_frame'])
         keyframe = max((k for k in self.timeline.keyframes if k <= scene['start_frame']), default=0)
-        # -copyts keeps the source's absolute PTS, but a container start-time offset
-        # (e.g. an MP4 edit list) is not applied to -ss; seek within the raw media.
         raw_origin = self.info.document.get('format', {}).get('start_time')
         origin = (self.timeline.pts[0] * self.timeline.time_base if raw_origin in {None, 'N/A'}
                   else Fraction(raw_origin))
+        # Without -seek_timestamp, input -ss is relative to the container origin.
+        # -copyts plus absolute trim bounds still preserves the exact comparison interval.
         seek_time = self.timeline.pts[keyframe] * self.timeline.time_base - origin
         for metric, key in (('ssim', 'All'), ('psnr', 'psnr_avg')):
             stats = directory / f'{metric}.txt'
@@ -229,7 +229,7 @@ class ExportSession:
             )
             command = ffmpeg_base() + ['-filter_complex_threads', '1', '-threads', str(self.threads), '-copyts']
             if seek_time >= 0:
-                command += ['-seek_timestamp', '1', '-ss', decimal_seconds(seek_time)]
+                command += ['-ss', decimal_seconds(seek_time)]
             command += ['-noautorotate', '-protocol_whitelist', 'file,pipe,crypto',
                         '-i', str(self.info.path), '-noautorotate',
                         '-protocol_whitelist', 'file,pipe,crypto', '-i', str(output.path),

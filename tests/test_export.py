@@ -360,6 +360,43 @@ def test_compact_quality_seeks_from_preceding_keyframe_not_zero(source_video, tm
         assert Fraction(command[command.index('-ss') + 1]) == expected_seek
 
 
+def test_compact_quality_uses_relative_seek_without_timestamp_mode_for_offset_source(tmp_path, monkeypatch):
+    from fractions import Fraction
+    from framecleave.export import ExportSession
+    from framecleave.media import run
+    import framecleave.export as export_module
+
+    source = tmp_path / 'offset.mp4'
+    run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+         'testsrc2=size=160x120:rate=30:duration=4', '-c:v', 'libx264', '-threads', '1',
+         '-g', '30', '-keyint_min', '30', '-sc_threshold', '0', '-bf', '3',
+         '-output_ts_offset', '5', str(source)])
+    info, timeline = timeline_from_source(source)
+    scene = timeline.scenes([7, 47, 77])[2]
+    preceding = max(frame for frame in timeline.keyframes if frame <= scene['start_frame'])
+    origin = Fraction(info.document['format']['start_time'])
+    expected_seek = timeline.pts[preceding] * timeline.time_base - origin
+    assert expected_seek > 0
+    commands = []
+    real_run = export_module.run
+
+    def capture(command, **kwargs):
+        commands.append(list(command))
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(export_module, 'run', capture)
+    with ExportSession(info, timeline, tmp_path / 'work', mode='compact', threads=1) as session:
+        session.export(scene, tmp_path / 'scene.mov')
+    quality_commands = [command for command in commands
+                        if '-filter_complex' in command
+                        and any(metric in command[command.index('-filter_complex') + 1]
+                                for metric in ('ssim=', 'psnr='))]
+    assert len(quality_commands) == 2
+    for command in quality_commands:
+        assert '-seek_timestamp' not in command
+        assert Fraction(command[command.index('-ss') + 1]) == expected_seek
+
+
 def test_compact_quality_refuses_missing_ffmpeg_metric(source_video, tmp_path, monkeypatch):
     from framecleave.export import ExportSession
     from framecleave.media import MediaError

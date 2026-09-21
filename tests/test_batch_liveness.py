@@ -71,6 +71,30 @@ def test_zero_reserve_review_batch_records_per_file_failures(tmp_path):
     assert json.loads((tmp_path / 'out' / 'state.json').read_text())['status'] == 'partial-failure'
 
 
+def test_input_disappearing_during_reserve_sizing_isolated_to_file(tmp_path, monkeypatch):
+    from framecleave.batch import process_batch
+    from framecleave.config import Config
+
+    source = (tmp_path / 'vanishing.mp4').resolve()
+    source.write_bytes(b'not media')
+    real_stat = Path.stat
+    calls = {'source': 0}
+
+    def disappearing_stat(self, *args, **kwargs):
+        if self == source:
+            calls['source'] += 1
+            if calls['source'] == 3:
+                source.unlink()
+                raise FileNotFoundError(source)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'stat', disappearing_stat)
+    result = process_batch([source], tmp_path / 'out', Config(threads=1), jobs=1, mode='review-copy')
+    assert result['failed'] == 1
+    assert result['pending'] == 0
+    assert json.loads((tmp_path / 'out' / 'state.json').read_text())['status'] == 'partial-failure'
+
+
 def test_spawned_progress_storage_failure_cancels_workers_and_records_failure(source_video, tmp_path):
     bootstrap = f'''
 import sys, threading, json, multiprocessing
