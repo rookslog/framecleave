@@ -18,8 +18,8 @@ def _two_track_source(path, first_language, second_language):
          '-metadata:s:a:1', f'language={second_language}', str(path)])
 
 
-def test_assemble_selected_copies_once_without_originals(review_source, tmp_path):
-    from framecleave.assemble import assemble
+def test_assemble_selected_copies_once_without_originals(review_source, tmp_path, monkeypatch):
+    import framecleave.assemble as assemble_module
     from test_workflow import CollectingSink
 
     job = tmp_path / 'review'
@@ -30,7 +30,20 @@ def test_assemble_selected_copies_once_without_originals(review_source, tmp_path
     index_path.write_text(json.dumps(index))
     target = tmp_path / 'selected.mp4'
     progress = CollectingSink()
-    result = assemble([index_path], [(1, 1), (1, 3)], target, crf=18, threads=1, progress=progress)
+    commands = []
+    real_run_limited = assemble_module.run_limited
+
+    def capture(command, partial, limit, **kwargs):
+        if kwargs.get('label') == 'final assembly':
+            commands.append(list(command))
+        return real_run_limited(command, partial, limit, **kwargs)
+
+    monkeypatch.setattr(assemble_module, 'run_limited', capture)
+    result = assemble_module.assemble(
+        [index_path], [(1, 1), (1, 3)], target, crf=18, threads=1, progress=progress)
+    assert len(commands) == 1
+    assert commands[0][commands[0].index('-enc_time_base') + 1] == '1:1000000'
+    assert commands[0][commands[0].index('-bsf:v') + 1].startswith('setts=duration=')
     assert 'assembly_progress' in [event.event for event in progress.events]
     assert result['selected_scene_count'] == 2
     assert result['video_encodes'] == 1

@@ -137,7 +137,9 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
                          'source_sha256': info.sha256, 'source_range': cert['source_range'],
                          'visible_origin_rational': str(Fraction(actual.video.get('start_time', '0'))),
                          'audio_stream_count': len(actual.audio), 'method': cert['method'],
-                         'frames_audited': audit['frames_audited'], 'requested_frames': requested_frames})
+                         'frames_audited': audit['frames_audited'], 'requested_frames': requested_frames,
+                         'last_frame_duration_rational': str(
+                             timeline.durations[scene['end_frame'] - 1] * timeline.time_base)})
     ceiling = sum({s['path']: s['size_bytes'] for s in selected}.values()) * 3 // 2
     if max_temp_bytes is not None and (type(max_temp_bytes) is not int or not 0 < max_temp_bytes <= ceiling):
         raise ValueError('Temporary budget must be positive and at most 1.5× selected input bytes')
@@ -166,10 +168,19 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
     for track in range(audio_count):
         command += ['-map', f'[a{track}]']
     codec = layout[0][0]
+    last_duration = Fraction(selected[-1]['last_frame_duration_rational'])
+    last_duration_us = max(
+        1, (last_duration.numerator * 10**6 + last_duration.denominator - 1)
+        // last_duration.denominator)
     command += ['-c:v', 'libx264' if codec == 'h264' else 'libx265', '-threads', str(threads),
-                '-preset', 'medium', '-crf', str(crf), '-fps_mode', 'vfr', '-map_chapters', '-1']
+                '-preset', 'medium', '-crf', str(crf), '-fps_mode', 'vfr',
+                '-enc_time_base', '1:1000000', '-bsf:v', f'setts=duration={last_duration_us}',
+                '-map_chapters', '-1']
     if codec == 'hevc':
-        command += ['-x265-params', f'pools={threads}:frame-threads=1:log-level=error', '-tag:v', 'hvc1']
+        command += ['-x265-params', f'bframes=0:pools={threads}:frame-threads=1:log-level=error',
+                    '-tag:v', 'hvc1']
+    else:
+        command += ['-bf', '0']
     command += _color_options(dict(zip(_VIDEO_ATTRIBUTES, layout[0])))
     if audio_count:
         command += ['-c:a', 'aac', '-b:a', '128k']
