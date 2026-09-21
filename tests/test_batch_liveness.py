@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -53,6 +54,21 @@ def test_hard_worker_exit_returns_a_failed_summary_instead_of_waiting_forever(so
     assert value['failed'] >= 1
     assert value['pending'] == 0
     assert value['active'] == 0
+
+
+def test_zero_reserve_review_batch_records_per_file_failures(tmp_path):
+    from framecleave.batch import process_batch
+    from framecleave.config import Config
+
+    empty = tmp_path / 'empty.mp4'
+    empty.write_bytes(b'')
+    inputs = [tmp_path / 'missing-a.mp4', tmp_path / 'missing-b.mp4', empty]
+    result = process_batch(inputs, tmp_path / 'out', Config(threads=1), jobs=1, mode='review-copy')
+    assert result['failed'] == 3
+    assert result['pending'] == 0
+    assert result['active'] == 0
+    assert (tmp_path / 'out' / 'batch-summary.json').is_file()
+    assert json.loads((tmp_path / 'out' / 'state.json').read_text())['status'] == 'partial-failure'
 
 
 def test_spawned_progress_storage_failure_cancels_workers_and_records_failure(source_video, tmp_path):

@@ -84,7 +84,10 @@ def process_batch(inputs: list[Path], output: Path, config: Config, *, jobs: int
     options = dict(dry_run=dry_run, thumbnails=thumbnails, resume=resume, mode=mode)
     limits = {p: p.stat().st_size * 3 // 2 if p.is_file() else 0 for p in paths}
     reserves = {p: min(1024**2, limit // 8) for p, limit in limits.items()} if mode == 'review-copy' else {}
-    parent_budget = TemporaryBudget(sum(reserves.values())) if mode == 'review-copy' else None
+    total_reserve = sum(reserves.values()) if mode == 'review-copy' else 0
+    # A zero total (all inputs missing/empty) must not abort parent setup: the per-input
+    # failures and summary are the intended outcome, so leave the parent budget unset.
+    parent_budget = TemporaryBudget(total_reserve) if total_reserve > 0 else None
     with temporary_budget(parent_budget), JobDirectory(output, resume=resume) as root:
         previous_path = root / 'state.json'
         # Per-file resume validates source/config/mode. A resumed batch may add new sources.

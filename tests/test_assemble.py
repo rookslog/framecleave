@@ -3,9 +3,19 @@ import json
 import pytest
 
 from framecleave.config import Config
-from framecleave.media import MediaError, probe, run
+from framecleave.media import MediaError, probe, run, sha256_file
 from framecleave.workflow import process_video
 from test_review_copy import review_source as review_source
+
+
+def _two_track_source(path, first_language, second_language):
+    run(['ffmpeg', '-v', 'error', '-y',
+         '-f', 'lavfi', '-i', 'testsrc2=size=160x120:rate=30:duration=1',
+         '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=1',
+         '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=44100:duration=1',
+         '-map', '0:v', '-map', '1:a', '-map', '2:a', '-c:v', 'libx264', '-threads', '1', '-c:a', 'aac',
+         '-metadata:s:a:0', f'language={first_language}',
+         '-metadata:s:a:1', f'language={second_language}', str(path)])
 
 
 def test_assemble_selected_copies_once_without_originals(review_source, tmp_path):
@@ -25,7 +35,13 @@ def test_assemble_selected_copies_once_without_originals(review_source, tmp_path
     assert result['selected_scene_count'] == 2
     assert result['video_encodes'] == 1
     assert result['audio_codec'] == 'aac'
+    assert result['requested_frames'] == 50
+    assert result['verified_output_frames'] == 50
+    from fractions import Fraction
+    assert Fraction(result['output_duration_rational']) >= (
+        Fraction(result['requested_duration_rational']) - Fraction(result['coverage_tolerance_rational']))
     output = probe(target)
+    assert Fraction(result['coverage_tolerance_rational']) >= output.time_base * result['selected_scene_count']
     count = json.loads(run(['ffprobe', '-v', 'error', '-count_frames', '-select_streams', 'v:0',
         '-show_entries', 'stream=nb_read_frames', '-of', 'json', str(target)]))
     assert int(count['streams'][0]['nb_read_frames']) == 50
@@ -120,6 +136,104 @@ def test_assemble_refuses_selected_clips_with_different_chroma_location(tmp_path
     target = tmp_path / 'final.mp4'
     with pytest.raises(ValueError, match='differ'):
         assemble(jobs, [(1, 1), (2, 1)], target, threads=1)
+    assert not target.exists()
+    assert not (tmp_path / 'final.mp4.assembly.json').exists()
+
+
+def test_assemble_refuses_truncated_selected_clip_before_publication(source_video, tmp_path):
+    from framecleave.assemble import assemble
+
+    job = tmp_path / 'review'
+    process_video(source_video, job, Config(threads=1), cuts=[7, 47], mode='review-copy')
+    index_path = job / 'scene-index.json'
+    index = json.loads(index_path.read_text())
+    scene = index['scenes'][1]
+    clip = job / scene['output_file']
+    truncated = clip.with_name('truncated.mp4')
+    run(['ffmpeg', '-v', 'error', '-y', '-i', str(clip), '-frames:v', '5', '-an',
+         '-c:v', 'libx264', '-threads', '1', str(truncated)])
+    truncated.replace(clip)
+    certificate_path = job / scene['export']
+    certificate = json.loads(certificate_path.read_text())
+    certificate['output_sha256'] = sha256_file(clip)
+    certificate_path.write_text(json.dumps(certificate))
+    target = tmp_path / 'final.mp4'
+    with pytest.raises(ValueError, match='requested interval'):
+        assemble([index_path], [(1, 2)], target, threads=1)
+    assert not target.exists()
+    assert not (tmp_path / 'final.mp4.assembly.json').exists()
+    assert not list(tmp_path.glob('*.partial'))
+
+
+def test_assemble_matches_audio_stream_identity_and_order(tmp_path):
+    from framecleave.assemble import assemble
+
+    first = tmp_path / 'first.mp4'
+    same = tmp_path / 'same.mp4'
+    reversed_ = tmp_path / 'reversed.mp4'
+    _two_track_source(first, 'eng', 'fra')
+    _two_track_source(same, 'eng', 'fra')
+    _two_track_source(reversed_, 'fra', 'eng')
+    jobs = []
+    for number, source in enumerate([first, same, reversed_], 1):
+        job = tmp_path / f'job{number}'
+        process_video(source, job, Config(threads=1), cuts=[], mode='review-copy')
+        jobs.append(job / 'scene-index.json')
+    accepted = tmp_path / 'accepted.mp4'
+    result = assemble([jobs[0], jobs[1]], [(1, 1), (2, 1)], accepted, threads=1)
+    assert result['selected_scene_count'] == 2
+    assert accepted.exists()
+    refused = tmp_path / 'refused.mp4'
+    with pytest.raises(ValueError, match='identity'):
+        assemble([jobs[0], jobs[2]], [(1, 1), (2, 1)], refused, threads=1)
+    assert not refused.exists()
+    assert not (tmp_path / 'refused.mp4.assembly.json').exists()
+
+
+def _colored_source(path):
+    run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=160x120:rate=30:duration=1',
+         '-vf', 'setparams=color_primaries=bt470bg:color_trc=smpte170m:colorspace=bt470bg:range=pc',
+         '-c:v', 'libx264', '-threads', '1', '-pix_fmt', 'yuv420p',
+         '-chroma_sample_location', 'center', str(path)])
+
+
+def test_assemble_preserves_validated_color_metadata(tmp_path):
+    from framecleave.assemble import assemble
+
+    source = tmp_path / 'colored.mp4'
+    _colored_source(source)
+    expected = probe(source).video
+    assert expected['color_transfer'] == 'smpte170m'
+    assert expected['color_primaries'] == 'bt470bg'
+    job = tmp_path / 'review'
+    process_video(source, job, Config(threads=1), cuts=[], mode='review-copy')
+    target = tmp_path / 'final.mp4'
+    assemble([job / 'scene-index.json'], [(1, 1)], target, threads=1)
+    output = probe(target).video
+    for field in ['color_range', 'color_space', 'color_transfer', 'color_primaries', 'chroma_location']:
+        assert output[field] == expected[field]
+
+
+def test_assemble_refuses_output_color_mismatch(tmp_path, monkeypatch):
+    import framecleave.assemble as assemble_module
+    from framecleave.media import PreservationError
+
+    source = tmp_path / 'colored.mp4'
+    _colored_source(source)
+    job = tmp_path / 'review'
+    process_video(source, job, Config(threads=1), cuts=[], mode='review-copy')
+    real_probe = assemble_module.probe
+
+    def mismatched_probe(path, **kwargs):
+        info = real_probe(path, **kwargs)
+        if str(path).endswith('.partial'):
+            info.video['color_primaries'] = 'bt2020'
+        return info
+
+    monkeypatch.setattr(assemble_module, 'probe', mismatched_probe)
+    target = tmp_path / 'final.mp4'
+    with pytest.raises(PreservationError, match='color_primaries'):
+        assemble_module.assemble([job / 'scene-index.json'], [(1, 1)], target, threads=1)
     assert not target.exists()
     assert not (tmp_path / 'final.mp4.assembly.json').exists()
 

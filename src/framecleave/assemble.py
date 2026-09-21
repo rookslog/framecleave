@@ -10,8 +10,8 @@ import time
 import uuid
 
 from .limited_process import run_limited
-from .media import (MediaInfo, PreservationError, audit_frame_metadata, executable,
-                    hdr_metadata_present, probe, sha256_file)
+from .media import (MediaError, MediaInfo, PreservationError, audit_frame_metadata, executable,
+                    hdr_metadata_present, probe, sha256_file, video_hashes)
 from .model import read_index, validate_index
 from .progress import ProgressReporter, ProgressSink
 from .review_copy import validate_review_certificate
@@ -19,10 +19,49 @@ from .storage import JobLog, atomic_json_noclobber
 from .tempbudget import reserve_temp, temporary_budget
 from .workflow import _assert_contained, _segmentation_digest
 
+_VIDEO_ATTRIBUTES = ('codec_name', 'width', 'height', 'pix_fmt', 'sample_aspect_ratio',
+                     'color_range', 'color_space', 'color_transfer', 'color_primaries', 'chroma_location')
+_COLOR_OPTIONS = (('color_range', '-color_range'), ('color_space', '-colorspace'),
+                  ('color_transfer', '-color_trc'), ('color_primaries', '-color_primaries'),
+                  ('chroma_location', '-chroma_sample_location'))
+_KNOWN_VALUES = {None, 'unknown', 'unspecified', 'N/A'}
+
 
 def _display_rotations(payload: dict) -> list:
     """Nonzero display-matrix rotations that make FFmpeg autorotate an input."""
     return [entry.get('rotation') for entry in payload.get('side_data_list', []) if entry.get('rotation')]
+
+
+def _audio_identity(stream: dict) -> tuple:
+    """Stable semantic identity; muxer/vendor-specific fields are intentionally excluded."""
+    tags = stream.get('tags') or {}
+    disposition = stream.get('disposition') or {}
+    return (tags.get('language'), tags.get('title'),
+            tuple(sorted(name for name, enabled in disposition.items() if enabled)))
+
+
+def _audio_layout(stream: dict) -> tuple:
+    return (stream.get('sample_rate'), stream.get('channels'), stream.get('channel_layout'),
+            _audio_identity(stream))
+
+
+def _color_options(video: dict) -> list:
+    options = []
+    for field, option in _COLOR_OPTIONS:
+        value = video.get(field)
+        if value not in _KNOWN_VALUES:
+            options += [option, str(value)]
+    return options
+
+
+def _verify_color(video: dict, expected: dict) -> None:
+    for field, _ in _COLOR_OPTIONS:
+        value = expected.get(field)
+        if value in _KNOWN_VALUES:
+            continue
+        if video.get(field) != value:
+            raise PreservationError(
+                f'Final assembly changed {field}: {value!r} -> {video.get(field)!r}')
 
 
 def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output: Path, *,
@@ -77,23 +116,28 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
         if rotations:
             raise PreservationError(
                 f'Selected clip has nonzero display rotation {rotations}; assembly would autorotate it')
-        attributes = ['codec_name', 'width', 'height', 'pix_fmt', 'sample_aspect_ratio',
-                      'color_range', 'color_space', 'color_transfer', 'color_primaries', 'chroma_location']
-        current = ([actual.video.get(k) for k in attributes],
-                   [[a.get(k) for k in ['sample_rate', 'channels', 'channel_layout']] for a in actual.audio])
         if actual.video['codec_name'] not in {'h264', 'hevc'}:
             raise ValueError('Final assembly supports H.264/HEVC')
         if hdr_metadata_present(actual.video):
             raise PreservationError('HDR final assembly is not qualified; no normalization attempted')
-        audit_frame_metadata(actual, threads=threads)
+        audit = audit_frame_metadata(actual, threads=threads)
+        requested_frames = cert['source_range']['end_frame'] - cert['source_range']['start_frame']
+        if audit['frames_audited'] < requested_frames:
+            raise ValueError(
+                f'Selected clip {clip.name} decodes {audit["frames_audited"]} frames, shorter than its '
+                f'certified requested interval of {requested_frames} frames')
+        current = (tuple(actual.video.get(key) for key in _VIDEO_ATTRIBUTES),
+                   tuple(_audio_layout(stream) for stream in actual.audio))
         if layout is not None and current != layout:
-            raise ValueError('Selected video geometry/color/codec or audio layouts differ; no normalization attempted')
+            raise ValueError(
+                'Selected video geometry/color/codec or audio identity/layout differ; no normalization attempted')
         layout = current
         selected.append({'job': job_number, 'scene': scene_number, 'path': str(clip),
                          'sha256': actual.sha256, 'size_bytes': clip.stat().st_size,
                          'source_sha256': info.sha256, 'source_range': cert['source_range'],
                          'visible_origin_rational': str(Fraction(actual.video.get('start_time', '0'))),
-                         'audio_stream_count': len(actual.audio), 'method': cert['method']})
+                         'audio_stream_count': len(actual.audio), 'method': cert['method'],
+                         'frames_audited': audit['frames_audited'], 'requested_frames': requested_frames})
     ceiling = sum({s['path']: s['size_bytes'] for s in selected}.values()) * 3 // 2
     if max_temp_bytes is not None and (type(max_temp_bytes) is not int or not 0 < max_temp_bytes <= ceiling):
         raise ValueError('Temporary budget must be positive and at most 1.5× selected input bytes')
@@ -126,12 +170,15 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
                 '-preset', 'medium', '-crf', str(crf), '-fps_mode', 'vfr', '-map_chapters', '-1']
     if codec == 'hevc':
         command += ['-x265-params', f'pools={threads}:frame-threads=1:log-level=error', '-tag:v', 'hvc1']
+    command += _color_options(dict(zip(_VIDEO_ATTRIBUTES, layout[0])))
     if audio_count:
         command += ['-c:a', 'aac', '-b:a', '128k']
     command += ['-f', 'mp4', str(partial)]
     reporter = ProgressReporter(progress, job_id=output.name)
     reporter.emit('job_started', 'assembling')
     started = time.monotonic()
+    requested_frames = sum(item['requested_frames'] for item in selected)
+    requested_duration = sum((Fraction(item['source_range']['duration_rational']) for item in selected), Fraction())
     owned = False
     resources = ExitStack()
     try:
@@ -140,7 +187,6 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
         fd = os.open(partial, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(fd)
         owned = True
-        requested_frames = sum(s['source_range']['end_frame']-s['source_range']['start_frame'] for s in selected)
         with JobLog(output.parent, filename=diagnostics.name):
             run_limited(command, partial, limit, label='final assembly', on_progress=lambda frames:
                         reporter.emit('assembly_progress', 'encoding', completed=min(frames, requested_frames),
@@ -148,11 +194,26 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
             result_info = probe(partial)
             run_limited([executable('ffmpeg'), '-nostdin', '-v', 'error', '-xerror', '-threads', str(threads),
                          '-i', str(partial), '-f', 'null', '-'], partial, limit, label='final decode check')
+            output_frames = video_hashes(result_info, threads=threads)
+            if len(output_frames) != requested_frames:
+                raise MediaError(
+                    f'Final assembly decoded {len(output_frames)} frames, expected the {requested_frames} requested')
+            output_span = (output_frames[-1]['pts'] + output_frames[-1]['duration']
+                           - output_frames[0]['pts']) * result_info.time_base
+            coverage_tolerance = max(
+                Fraction(len(selected), 10**6), len(selected) * result_info.time_base)
+            if output_span < requested_duration - coverage_tolerance:
+                raise MediaError(
+                    f'Final assembly covers {output_span} of the certified {requested_duration} requested duration')
+            _verify_color(result_info.video, dict(zip(_VIDEO_ATTRIBUTES, layout[0])))
         result = {'schema_version': 1, 'output': str(output), 'output_sha256': result_info.sha256,
                   'output_size_bytes': partial.stat().st_size, 'selected_scene_count': len(selected),
                   'selected': selected, 'crf': crf, 'video_encodes': 1, 'audio_codec': 'aac' if audio_count else None,
                   'temp_media_limit_bytes': limit, 'decode_success': True,
-                  'requested_duration_rational': str(sum((Fraction(s['source_range']['duration_rational']) for s in selected), Fraction())),
+                  'requested_frames': requested_frames, 'verified_output_frames': len(output_frames),
+                  'requested_duration_rational': str(requested_duration),
+                  'output_duration_rational': str(output_span),
+                  'coverage_tolerance_rational': str(coverage_tolerance),
                   'output_duration': result_info.document.get('format', {}).get('duration'),
                   'wall_seconds': time.monotonic()-started,
                   'diagnostics': diagnostics.name,
