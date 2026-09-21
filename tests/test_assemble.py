@@ -170,6 +170,12 @@ def test_assemble_refuses_truncated_selected_clip_before_publication(source_vide
     certificate = json.loads(certificate_path.read_text())
     certificate['output_sha256'] = sha256_file(clip)
     certificate_path.write_text(json.dumps(certificate))
+    state_path = job / 'state.json'
+    state = json.loads(state_path.read_text())
+    record = state['completed'][str(scene['number'])]
+    record['sha256'] = certificate['output_sha256']
+    record['certificate_sha256'] = sha256_file(certificate_path)
+    state_path.write_text(json.dumps(state))
     target = tmp_path / 'final.mp4'
     with pytest.raises(ValueError, match='requested interval'):
         assemble([index_path], [(1, 2)], target, threads=1)
@@ -196,11 +202,35 @@ def test_assemble_matches_audio_stream_identity_and_order(tmp_path):
     result = assemble([jobs[0], jobs[1]], [(1, 1), (2, 1)], accepted, threads=1)
     assert result['selected_scene_count'] == 2
     assert accepted.exists()
+    accepted_audio = probe(accepted).audio
+    assert [stream.get('tags', {}).get('language') for stream in accepted_audio] == ['eng', 'fra']
+    expected_audio = probe(first).audio
+    assert [[name for name, enabled in stream.get('disposition', {}).items() if enabled]
+            for stream in accepted_audio] == [
+                [name for name, enabled in stream.get('disposition', {}).items() if enabled]
+                for stream in expected_audio]
     refused = tmp_path / 'refused.mp4'
     with pytest.raises(ValueError, match='identity'):
         assemble([jobs[0], jobs[2]], [(1, 1), (2, 1)], refused, threads=1)
     assert not refused.exists()
     assert not (tmp_path / 'refused.mp4.assembly.json').exists()
+
+
+def test_assemble_refuses_media_and_certificate_substituted_without_state_update(source_video, tmp_path):
+    from framecleave.assemble import assemble
+
+    job = tmp_path / 'review'
+    process_video(source_video, job, Config(threads=1), cuts=[7], mode='review-copy')
+    index = json.loads((job / 'scene-index.json').read_text())
+    scene = index['scenes'][0]
+    clip = job / scene['output_file']
+    clip.write_bytes(clip.read_bytes() + b'substituted')
+    certificate_path = job / scene['export']
+    certificate = json.loads(certificate_path.read_text())
+    certificate['output_sha256'] = sha256_file(clip)
+    certificate_path.write_text(json.dumps(certificate))
+    with pytest.raises(ValueError, match='completed state'):
+        assemble([job / 'scene-index.json'], [(1, 1)], tmp_path / 'final.mp4', threads=1)
 
 
 def _colored_source(path):

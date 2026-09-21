@@ -48,6 +48,23 @@ def test_review_verification_refuses_changed_media_or_intended_ranges(source_vid
         verify_job(source_video, out / 'scene-index.json')
 
 
+def test_review_verification_anchors_media_and_certificate_to_completed_state(source_video, tmp_path):
+    from framecleave.media import sha256_file
+
+    out = tmp_path / 'review'
+    process_video(source_video, out, Config(), cuts=[7], mode='review-copy')
+    index = json.loads((out / 'scene-index.json').read_text())
+    scene = index['scenes'][0]
+    clip = out / scene['output_file']
+    clip.write_bytes(clip.read_bytes() + b'substituted')
+    certificate_path = out / scene['export']
+    certificate = json.loads(certificate_path.read_text())
+    certificate['output_sha256'] = sha256_file(clip)
+    certificate_path.write_text(json.dumps(certificate))
+    with pytest.raises(ValueError, match='completed state'):
+        verify_job(source_video, out / 'scene-index.json')
+
+
 def test_internal_batch_allowance_cannot_raise_owner_budget(source_video, tmp_path):
     from test_workflow import CollectingSink
 

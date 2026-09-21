@@ -142,6 +142,11 @@ def test_compact_verification_refuses_a_different_reference_encoder_build(source
     value = json.loads(certificate.read_text())
     value['video']['reference_encoder_build'] = 'different-encoder-build'
     certificate.write_text(json.dumps(value))
+    state_path = out / 'state.json'
+    state = json.loads(state_path.read_text())
+    from framecleave.media import sha256_file
+    state['completed']['1']['certificate_sha256'] = sha256_file(certificate)
+    state_path.write_text(json.dumps(state))
     with pytest.raises(ValueError, match='encoder build'):
         verify_job(source_video, out / 'scene-index.json')
 

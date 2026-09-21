@@ -58,6 +58,27 @@ def _assert_contained(root: Path, path: Path) -> None:
         raise ValueError(f'Job asset escapes the output directory: {path}')
 
 
+def _validated_completed_record(root: Path, state: dict, scene: dict) -> dict:
+    """Anchor an indexed output/certificate pair to the job's completed-state hashes."""
+    completed = state.get('completed')
+    record = completed.get(str(scene['number'])) if isinstance(completed, dict) else None
+    if not isinstance(record, dict):
+        raise ValueError(f"Scene {scene['number']} is not anchored in completed state")
+    if (record.get('path') != scene.get('output_file')
+            or record.get('certificate') != scene.get('export')):
+        raise ValueError(f"Scene {scene['number']} paths differ from completed state")
+    output = root / record['path']
+    certificate = root / record['certificate']
+    for asset in [output, certificate]:
+        _assert_contained(root, asset)
+        if not asset.is_file() or asset.is_symlink():
+            raise ValueError(f"Scene {scene['number']} asset differs from completed state")
+    if (sha256_file(output) != record.get('sha256')
+            or sha256_file(certificate) != record.get('certificate_sha256')):
+        raise ValueError(f"Scene {scene['number']} digest differs from completed state")
+    return record
+
+
 def _without_encoder_build(request: dict) -> dict:
     value = json.loads(json.dumps(request))
     value.pop('policy_digest', None)
@@ -396,12 +417,20 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
     if info.sha256 != index['source']['sha256']:
         raise ValueError('Verification source digest differs from the indexed source')
     root = Path(index_path).resolve().parent
+    state_path = root / 'state.json'
+    _assert_contained(root, state_path)
+    if not state_path.is_file() or state_path.is_symlink():
+        raise ValueError('Verification requires an owned completed state record')
+    state = json.loads(state_path.read_text(encoding='utf-8'))
+    if state.get('source_sha256') != info.sha256:
+        raise ValueError('Verification source differs from completed state')
     results = []
     policies = []
     methods = {}
     certificates = {}
     current_encoder_build = None
     for scene in index['scenes']:
+        _validated_completed_record(root, state, scene)
         if not scene.get('export'):
             raise ValueError('Cannot verify a scene without an export certificate')
         certificate_path = root / scene['export']

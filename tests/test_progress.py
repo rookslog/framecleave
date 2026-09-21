@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import queue
 
 import pytest
@@ -85,6 +86,42 @@ def test_jsonl_sink_discards_only_an_incomplete_final_line(tmp_path):
     sink.close()
     lines = path.read_text().splitlines()
     assert [json.loads(line)['event'] for line in lines] == ['job_started', 'job_finished']
+
+
+def test_jsonl_sink_repairs_large_tail_with_bounded_reads(tmp_path, monkeypatch):
+    path = tmp_path / 'events.jsonl'
+    complete = b'{"event":"analysis_progress"}\n' * 100_000
+    path.write_bytes(complete + b'{"event":')
+    real_open = Path.open
+    read_sizes = []
+
+    class TrackingFile:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def read(self, size=-1):
+            read_sizes.append(size)
+            return self.handle.read(size)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.handle.close()
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+    def tracking_open(self, *args, **kwargs):
+        handle = real_open(self, *args, **kwargs)
+        return TrackingFile(handle) if self == path else handle
+
+    monkeypatch.setattr(Path, 'open', tracking_open)
+    sink = JsonlProgressSink(path)
+    sink.close()
+    repair_reads = list(read_sizes)
+    assert path.read_bytes() == complete
+    assert repair_reads and all(0 < size <= 64 * 1024 for size in repair_reads)
 
 
 def test_queue_sink_transports_validated_event_dictionaries():

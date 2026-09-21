@@ -17,7 +17,7 @@ from .progress import ProgressReporter, ProgressSink
 from .review_copy import validate_review_certificate
 from .storage import JobLog, atomic_json_noclobber
 from .tempbudget import reserve_temp, temporary_budget
-from .workflow import _assert_contained, _segmentation_digest
+from .workflow import _assert_contained, _segmentation_digest, _validated_completed_record
 
 _VIDEO_ATTRIBUTES = ('codec_name', 'width', 'height', 'pix_fmt', 'sample_aspect_ratio',
                      'color_range', 'color_space', 'color_transfer', 'color_primaries', 'chroma_location')
@@ -89,19 +89,27 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
         index = read_index(path)
         timeline = validate_index(index)
         source = index['source']
+        state_path = path.parent / 'state.json'
+        _assert_contained(path.parent, state_path)
+        if not state_path.is_file() or state_path.is_symlink():
+            raise ValueError('Assembly requires an owned completed state record')
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+        if state.get('source_sha256') != source['sha256']:
+            raise ValueError('Assembly index source differs from completed state')
         # Recorded source inventory is sufficient; originals are not assembly inputs.
         info = MediaInfo(Path(source['path']), {'streams': source['streams'], 'format': source.get('format', {})}, source['sha256'])
-        jobs.append((path.parent, index, timeline, info))
+        jobs.append((path.parent, index, timeline, info, state))
     selected = []
     layout = None
     for job_number, scene_number in selections:
         if (type(job_number) is not int or type(scene_number) is not int
                 or not 1 <= job_number <= len(jobs)):
             raise ValueError('Invalid job:scene selection')
-        root, index, timeline, info = jobs[job_number-1]
+        root, index, timeline, info, state = jobs[job_number-1]
         scene = next((s for s in index['scenes'] if s['number'] == scene_number), None)
         if scene is None or not scene.get('output_file') or not scene.get('export'):
             raise ValueError('Selected scene is absent or unexported')
+        _validated_completed_record(root, state, scene)
         clip, cert_path = root / scene['output_file'], root / scene['export']
         for asset in [clip, cert_path]:
             _assert_contained(root, asset)
@@ -138,6 +146,7 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
                          'visible_origin_rational': str(Fraction(actual.video.get('start_time', '0'))),
                          'audio_stream_count': len(actual.audio), 'method': cert['method'],
                          'frames_audited': audit['frames_audited'], 'requested_frames': requested_frames,
+                         'audio_identities': tuple(_audio_identity(stream) for stream in actual.audio),
                          'last_frame_duration_rational': str(
                              timeline.durations[scene['end_frame'] - 1] * timeline.time_base)})
     ceiling = sum({s['path']: s['size_bytes'] for s in selected}.values()) * 3 // 2
@@ -184,6 +193,12 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
     command += _color_options(dict(zip(_VIDEO_ATTRIBUTES, layout[0])))
     if audio_count:
         command += ['-c:a', 'aac', '-b:a', '128k']
+        for track, (language, title, dispositions) in enumerate(selected[0]['audio_identities']):
+            if language is not None:
+                command += [f'-metadata:s:a:{track}', f'language={language}']
+            if title is not None:
+                command += [f'-metadata:s:a:{track}', f'title={title}']
+            command += [f'-disposition:a:{track}', '+'.join(dispositions) or '0']
     command += ['-f', 'mp4', str(partial)]
     reporter = ProgressReporter(progress, job_id=output.name)
     reporter.emit('job_started', 'assembling')
@@ -217,6 +232,8 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
                 raise MediaError(
                     f'Final assembly covers {output_span} of the certified {requested_duration} requested duration')
             _verify_color(result_info.video, dict(zip(_VIDEO_ATTRIBUTES, layout[0])))
+            if tuple(_audio_identity(stream) for stream in result_info.audio) != selected[0]['audio_identities']:
+                raise PreservationError('Final assembly changed audio stream identity or dispositions')
         result = {'schema_version': 1, 'output': str(output), 'output_sha256': result_info.sha256,
                   'output_size_bytes': partial.stat().st_size, 'selected_scene_count': len(selected),
                   'selected': selected, 'crf': crf, 'video_encodes': 1, 'audio_codec': 'aac' if audio_count else None,

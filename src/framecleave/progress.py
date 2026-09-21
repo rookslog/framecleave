@@ -375,12 +375,25 @@ class JsonlProgressSink:
         if not self.path.exists() or self.path.stat().st_size == 0:
             return
         with self.path.open("r+b") as handle:
-            payload = handle.read()
-            if payload.endswith(b"\n"):
+            handle.seek(-1, os.SEEK_END)
+            if handle.read(1) == b"\n":
                 return
-            boundary = payload.rfind(b"\n") + 1
+            position = handle.tell()
+            payload = bytearray()
+            boundary = 0
+            while position > 0:
+                size = min(64 * 1024, position)
+                position -= size
+                handle.seek(position)
+                block = handle.read(size)
+                newline = block.rfind(b"\n")
+                if newline >= 0:
+                    boundary = position + newline + 1
+                    payload[:0] = block[newline + 1:]
+                    break
+                payload[:0] = block
             try:
-                json.loads(payload[boundary:])
+                json.loads(payload)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 handle.truncate(boundary)
             else:
