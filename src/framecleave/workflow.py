@@ -290,11 +290,12 @@ def _process_video(source: Path, directory: Path, config: Config, *, dry_run: bo
                     _assert_contained(root, root / name)
                     if (root / name).is_symlink():
                         raise ValueError(f'Job subdirectory must not be a symlink: {name}')
-                exporter = (ReviewCopySession(info, timeline, reporter=reporter, policy=resolved_policy)
+                exporter = (ReviewCopySession(info, timeline, reporter=reporter, policy=resolved_policy,
+                                              defer_certified=True)
                             if mode == 'review-copy' else
                             ExportSession(info, timeline, root / 'scratch', threads=config.threads, mode=mode,
                                           reporter=reporter, diagnostics='diagnostics.log', policy=resolved_policy,
-                                          bind_reference_encoder=not copy_only_resume))
+                                          bind_reference_encoder=not copy_only_resume, defer_certified=True))
                 with exporter as session:
                     for scene in index['scenes']:
                         key = str(scene['number'])
@@ -342,6 +343,7 @@ def _process_video(source: Path, directory: Path, config: Config, *, dry_run: bo
                                                    'certificate_sha256': sha256_file(root / cert_relative)}
                         atomic_json(state_path, state)
                         atomic_json(index_file, index)
+                        session.publish_certified()
                         exported += 1
             if dry_run or thumbnails:
                 make_thumbnails(info, index, root, threads=config.threads)
@@ -409,11 +411,12 @@ def verify_job(source: Path, index_path: Path, *, threads: int = 2) -> dict:
         certificate = json.loads(certificate_path.read_text(encoding='utf-8'))
         certificates[scene['number']] = certificate
         methods[scene['number']] = certificate.get('method')
+        policy = certificate_policy(certificate, source_codec=info.video['codec_name'])
+        policies.append(policy)
         if certificate.get('method') == 'compact-reencode':
-            current_encoder_build = current_encoder_build or ffmpeg_build_fingerprint()
+            current_encoder_build = current_encoder_build or ffmpeg_build_fingerprint(policy.video.encoder)
             if certificate.get('video', {}).get('reference_encoder_build') != current_encoder_build:
                 raise ValueError('Compact reference encoder build differs from the certified output')
-        policies.append(certificate_policy(certificate, source_codec=info.video['codec_name']))
     if len({policy_digest(policy) for policy in policies}) != 1:
         raise ValueError('Job certificates carry inconsistent export policies')
     policy = policies[0]

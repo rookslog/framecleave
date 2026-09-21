@@ -118,7 +118,7 @@ def bind_encoder_build(policy: ExportPolicy) -> ExportPolicy:
         return policy
     from .media import ffmpeg_build_fingerprint
 
-    current = ffmpeg_build_fingerprint()
+    current = ffmpeg_build_fingerprint(policy.video.encoder)
     if policy.video.encoder_build is not None and policy.video.encoder_build != current:
         raise ValueError('Compact reference encoder build differs from the certified policy')
     return replace(policy, video=replace(policy.video, encoder_build=current))

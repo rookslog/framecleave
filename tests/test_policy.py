@@ -52,6 +52,18 @@ def test_old_certificates_are_read_as_exact_and_compact_cannot_claim_pixel_equal
         certificate_policy(certificate, source_codec='h264')
 
 
+def test_compact_policy_identity_tracks_selected_encoder_probe(monkeypatch):
+    import framecleave.media as media
+    from framecleave.policy import ExportPolicy, bind_encoder_build, policy_digest
+
+    monkeypatch.setattr(media, 'encoder_probe_bytes', lambda encoder: b'probe-one', raising=False)
+    first = bind_encoder_build(ExportPolicy.compact(source_codec='h264'))
+    monkeypatch.setattr(media, 'encoder_probe_bytes', lambda encoder: b'probe-two', raising=False)
+    second = bind_encoder_build(ExportPolicy.compact(source_codec='h264'))
+    assert first.video.encoder_build != second.video.encoder_build
+    assert policy_digest(first) != policy_digest(second)
+
+
 def test_compact_default_audio_binds_native_pcm_fallback_policy():
     from framecleave.policy import ExportPolicy, policy_digest
 

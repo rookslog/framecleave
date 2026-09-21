@@ -101,6 +101,29 @@ def test_assemble_manifest_publication_does_not_clobber_concurrent_sidecar(sourc
     assert target.exists()
 
 
+def test_assemble_refuses_selected_clips_with_different_chroma_location(tmp_path):
+    from framecleave.assemble import assemble
+
+    left = tmp_path / 'left.mp4'
+    center = tmp_path / 'center.mp4'
+    base = ['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+            'testsrc2=size=160x120:rate=30:duration=1', '-c:v', 'libx264', '-threads', '1', '-x264-params']
+    run([*base, 'chromaloc=0', str(left)])
+    run([*base, 'chromaloc=1', str(center)])
+    assert probe(left).video['chroma_location'] == 'left'
+    assert probe(center).video['chroma_location'] == 'center'
+    jobs = []
+    for number, source in enumerate([left, center], 1):
+        job = tmp_path / f'job{number}'
+        process_video(source, job, Config(threads=1), cuts=[], mode='review-copy')
+        jobs.append(job / 'scene-index.json')
+    target = tmp_path / 'final.mp4'
+    with pytest.raises(ValueError, match='differ'):
+        assemble(jobs, [(1, 1), (2, 1)], target, threads=1)
+    assert not target.exists()
+    assert not (tmp_path / 'final.mp4.assembly.json').exists()
+
+
 def test_assemble_normalizes_nonzero_container_start_time(tmp_path):
     from framecleave.assemble import assemble
 

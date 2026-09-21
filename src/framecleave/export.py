@@ -87,7 +87,8 @@ class ExportSession:
     def __init__(self, info: MediaInfo, timeline: Timeline, work_directory: Path, *, threads: int = 2,
                  mode: str = "auto", progress: ProgressSink | None = None, job_id: str | None = None,
                  reporter: ProgressReporter | None = None, diagnostics: str | None = None,
-                 policy: ExportPolicy | None = None, bind_reference_encoder: bool = True):
+                 policy: ExportPolicy | None = None, bind_reference_encoder: bool = True,
+                 defer_certified: bool = False):
         if mode not in {"compact", "auto", "lossless", "copy-only"}:
             raise ValueError("Export mode must be compact, auto, lossless, or copy-only")
         self.info = info
@@ -102,6 +103,8 @@ class ExportSession:
             raise ValueError('Compact policy encoder differs from the source codec family')
         self.progress = reporter or ProgressReporter(progress, job_id=job_id)
         self.diagnostics = diagnostics
+        self.defer_certified = defer_certified
+        self._pending_certified: tuple[str, str, bool] | None = None
         self.reference: list[dict] | None = None
         self.audio = None
         self.frame_audit = None
@@ -448,8 +451,11 @@ class ExportSession:
             os.link(partial, target)
             partial.unlink()
             certified = True
-            self.progress.emit("scene_certified", "exporting", scene_id=scene_id,
-                               outcome="success", recovered=bool(failures))
+            if self.defer_certified:
+                self._pending_certified = ("exporting", scene_id, bool(failures))
+            else:
+                self.progress.emit("scene_certified", "exporting", scene_id=scene_id,
+                                   outcome="success", recovered=bool(failures))
             return result
         except BaseException as exc:
             if not certified:
@@ -460,3 +466,11 @@ class ExportSession:
             raise
         finally:
             partial.unlink(missing_ok=True)
+
+    def publish_certified(self) -> None:
+        """Emit the deferred success event once the caller has durably persisted the job."""
+        if self._pending_certified is None:
+            return
+        phase, scene_id, recovered = self._pending_certified
+        self._pending_certified = None
+        self.progress.emit("scene_certified", phase, scene_id=scene_id, outcome="success", recovered=recovered)

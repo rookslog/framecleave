@@ -78,7 +78,7 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
             raise PreservationError(
                 f'Selected clip has nonzero display rotation {rotations}; assembly would autorotate it')
         attributes = ['codec_name', 'width', 'height', 'pix_fmt', 'sample_aspect_ratio',
-                      'color_range', 'color_space', 'color_transfer', 'color_primaries']
+                      'color_range', 'color_space', 'color_transfer', 'color_primaries', 'chroma_location']
         current = ([actual.video.get(k) for k in attributes],
                    [[a.get(k) for k in ['sample_rate', 'channels', 'channel_layout']] for a in actual.audio])
         if actual.video['codec_name'] not in {'h264', 'hevc'}:

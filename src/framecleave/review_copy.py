@@ -52,7 +52,7 @@ def validate_review_certificate(certificate: dict, info: MediaInfo, timeline: Ti
 class ReviewCopySession:
     def __init__(self, info: MediaInfo, timeline: Timeline, *, max_temp_bytes: int | None = None,
                  progress: ProgressSink | None = None, reporter: ProgressReporter | None = None,
-                 policy: ExportPolicy | None = None):
+                 policy: ExportPolicy | None = None, defer_certified: bool = False):
         self.info = info
         self.timeline = timeline
         self.policy = policy or resolve_policy('review-copy', source_codec=info.video['codec_name'])
@@ -63,6 +63,8 @@ class ReviewCopySession:
             raise ValueError('Temporary media budget must be positive and no larger than 1.5× input bytes')
         self.max_temp_bytes = available_temp(ceiling if max_temp_bytes is None else max_temp_bytes)
         self.progress = reporter or ProgressReporter(progress)
+        self.defer_certified = defer_certified
+        self._pending_certified: tuple[str, str] | None = None
         self._export_lock = threading.Lock()
 
     def __enter__(self) -> 'ReviewCopySession':
@@ -165,7 +167,10 @@ class ReviewCopySession:
                       'verification': {'video': 'not_applicable', 'audio': 'not_applicable'},
                       'warnings': ['Packet-copy preview edges may include extra frames; trim recorded ranges during final assembly.']}
             os.link(partial, target)  # Atomic, no-clobber publication; no second media copy.
-            self.progress.emit('scene_certified', 'remuxing', scene_id=scene_id, outcome='success')
+            if self.defer_certified:
+                self._pending_certified = ('remuxing', scene_id)
+            else:
+                self.progress.emit('scene_certified', 'remuxing', scene_id=scene_id, outcome='success')
             return result
         except BaseException as exc:
             self.progress.emit('scene_failed', 'remuxing', scene_id=scene_id, outcome='failed',
@@ -175,3 +180,11 @@ class ReviewCopySession:
             if owned:
                 partial.unlink(missing_ok=True)
             reservation.close()
+
+    def publish_certified(self) -> None:
+        """Emit the deferred success event once the caller has durably persisted the job."""
+        if self._pending_certified is None:
+            return
+        phase, scene_id = self._pending_certified
+        self._pending_certified = None
+        self.progress.emit('scene_certified', phase, scene_id=scene_id, outcome='success')

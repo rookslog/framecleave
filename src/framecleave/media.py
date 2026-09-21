@@ -76,11 +76,32 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def ffmpeg_build_fingerprint() -> str:
-    """Bind deterministic reference encoding to the executable and version report."""
+_ENCODER_PROBES = {
+    'libx264': (['-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-threads', '1', '-bf', '0',
+                 '-x264-params', 'log-level=error'], 'h264'),
+    'libx265': (['-c:v', 'libx265', '-preset', 'medium', '-crf', '18', '-threads', '1',
+                 '-x265-params', 'log-level=error:pools=1:frame-threads=1'], 'hevc'),
+}
+
+
+def encoder_probe_bytes(encoder: str) -> bytes:
+    """One deterministic frame whose elementary stream embeds the encoder's build metadata."""
+    try:
+        options, container = _ENCODER_PROBES[encoder]
+    except KeyError as exc:
+        raise MediaError(f'Unsupported compact encoder for fingerprinting: {encoder}') from exc
+    command = ffmpeg_base() + ['-f', 'lavfi', '-i', 'color=c=black:s=16x16:r=1', '-frames:v', '1',
+                               *options, '-f', container, 'pipe:1']
+    return run(command, timeout=30)
+
+
+def ffmpeg_build_fingerprint(encoder: str) -> str:
+    """Bind deterministic reference encoding to FFmpeg and the selected encoder's runtime build."""
     path = executable('ffmpeg')
     digest = hashlib.sha256(run([path, '-version'], timeout=10))
     digest.update(sha256_file(Path(path)).encode())
+    digest.update(encoder.encode())
+    digest.update(encoder_probe_bytes(encoder))
     return digest.hexdigest()
 
 

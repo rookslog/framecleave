@@ -1,4 +1,6 @@
 import json
+from pathlib import Path
+
 import pytest
 
 
@@ -170,7 +172,7 @@ def test_compact_whole_file_copy_verifies_after_encoder_build_changes(source_vid
     process_video(source_video, out, Config(threads=1), cuts=[], mode='compact')
     certificate = json.loads((out / 'certificates/0001.json').read_text())
     assert certificate['method'] == 'whole-file-copy'
-    monkeypatch.setattr('framecleave.media.ffmpeg_build_fingerprint', lambda: '0' * 64)
+    monkeypatch.setattr('framecleave.media.ffmpeg_build_fingerprint', lambda encoder: '0' * 64)
 
     assert verify_job(source_video, out / 'scene-index.json')['verified'] is True
 
@@ -182,12 +184,100 @@ def test_completed_compact_whole_file_copy_resumes_after_encoder_build_changes(s
 
     out = tmp_path / 'whole-copy-resume'
     process_video(source_video, out, Config(threads=1), cuts=[], mode='compact')
-    monkeypatch.setattr('framecleave.media.ffmpeg_build_fingerprint', lambda: '0' * 64)
+    monkeypatch.setattr('framecleave.media.ffmpeg_build_fingerprint', lambda encoder: '0' * 64)
 
     result = process_video(source_video, out, Config(threads=1), cuts=[], mode='compact', resume=True)
 
     assert result['exported'] == 0
     assert result['skipped_verified'] == 1
+
+
+@pytest.mark.parametrize('mode', ['auto', 'review-copy'])
+def test_workflow_withholds_scene_certified_when_persistence_fails(source_video, tmp_path, monkeypatch, mode):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video
+    from test_workflow import CollectingSink
+    import framecleave.workflow as workflow_module
+
+    sink = CollectingSink()
+    real_atomic_json = workflow_module.atomic_json
+
+    def fail_certificate(path, value):
+        if Path(path).name == '0001.json':
+            raise OSError('injected certificate persistence failure')
+        return real_atomic_json(path, value)
+
+    monkeypatch.setattr(workflow_module, 'atomic_json', fail_certificate)
+    with pytest.raises(OSError, match='injected certificate'):
+        process_video(source_video, tmp_path / 'out', Config(threads=1), cuts=[7], mode=mode, progress=sink)
+    names = [event.event for event in sink.events]
+    assert 'scene_certified' not in names
+    assert names.count('job_failed') == 1
+    assert 'job_finished' not in names
+    assert len(list((tmp_path / 'out' / 'scenes').iterdir())) == 1
+
+
+@pytest.mark.parametrize(('mode', 'phase'), [('auto', 'exporting'), ('review-copy', 'remuxing')])
+def test_workflow_emits_certification_after_durable_persistence(source_video, tmp_path, monkeypatch,
+                                                                mode, phase):
+    from framecleave.config import Config
+    from framecleave.workflow import process_video
+    import framecleave.workflow as workflow_module
+
+    order = []
+
+    class RecordingSink:
+        def __init__(self):
+            self.events = []
+
+        def emit(self, event):
+            self.events.append(event)
+            if event.event == 'scene_certified':
+                order.append(('event', 'scene_certified'))
+
+        def close(self, result=None):
+            pass
+
+    sink = RecordingSink()
+    real_atomic_json = workflow_module.atomic_json
+
+    def recording_atomic_json(path, value):
+        order.append(('write', Path(path).name))
+        return real_atomic_json(path, value)
+
+    monkeypatch.setattr(workflow_module, 'atomic_json', recording_atomic_json)
+    process_video(source_video, tmp_path / 'out', Config(threads=1), cuts=[], mode=mode, progress=sink)
+    certified = [event for event in sink.events if event.event == 'scene_certified']
+    assert len(certified) == 1
+    assert (certified[0].phase, certified[0].outcome, certified[0].scene_id) == (phase, 'success', '1')
+    event_index = order.index(('event', 'scene_certified'))
+    writes_before = [name for kind, name in order[:event_index] if kind == 'write']
+    assert writes_before[-3:] == ['0001.json', 'state.json', 'scene-index.json']
+
+
+def test_workflow_defers_compact_certification_with_recovery_meaning(source_video, tmp_path, monkeypatch):
+    from framecleave.config import Config
+    from framecleave.media import MediaError
+    from framecleave.workflow import process_video
+    from test_workflow import CollectingSink
+    import framecleave.export as export_module
+
+    sink = CollectingSink()
+    real_run = export_module.run
+    calls = {'count': 0}
+
+    def fail_first(command, **kwargs):
+        calls['count'] += 1
+        if calls['count'] == 1:
+            raise MediaError('simulated bounded attempt failure')
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(export_module, 'run', fail_first)
+    process_video(source_video, tmp_path / 'compact', Config(threads=1), cuts=[7], mode='compact', progress=sink)
+    certified = [event for event in sink.events if event.event == 'scene_certified']
+    assert certified
+    assert certified[0].phase == 'exporting'
+    assert certified[0].recovered is True
 
 
 def test_workflow_annotates_every_gray_card_frame_without_changing_partition(tmp_path):
