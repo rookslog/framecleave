@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "benchmark_version": "compact-full-coverage-v1",
+  "candidates": [
+    16,
+    18,
+    20
+  ],
+  "preset": "medium",
+  "audio_policy": "alac-or-pcm",
+  "verification": "independent-frame-ordinal-reference-encode-v1; rational timing; native audio equality",
+  "timing_scope": "probe, analysis, export, independent reference encoding, metrics, audio verification",
+  "size_scope": "all exported contiguous scenes / complete original source bytes",
+  "audio_size_scope": "encoded audio packet payload bytes; excludes container overhead",
+  "corpora": {
+    "generated": 18
+  },
+  "profiles": {
+    "h264-crf16": {
+      "runs": 3,
+      "structural_passes": 3,
+      "structural_failures": 0,
+      "source_bytes": 513176,
+      "output_bytes": 832717,
+      "output_source_ratio": 1.6226733128595259,
+      "wall_seconds": 3.8124869159946684,
+      "processing_speed_realtime": 1.5737758927979468,
+      "quality": {
+        "ssim": {
+          "mean": 0.9982559341317365,
+          "minimum": 0.997512
+        },
+        "psnr": {
+          "mean": 48.60520958083832,
+          "minimum": 46.48
+        }
+      },
+      "audio_codecs": {
+        "alac": 3,
+        "pcm_f32le": 3
+      },
+      "audio_packet_bytes": 422080,
+      "methods": {
+        "compact-reencode": 9
+      },
+      "visual_review": "not-reviewed",
+      "consumer_playback": "not-reviewed"
+    },
+    "h264-crf18": {
+      "runs": 3,
+      "structural_passes": 3,
+      "structural_failures": 0,
+      "source_bytes": 513176,
+      "output_bytes": 786161,
+      "output_source_ratio": 1.5319520008729948,
+      "wall_seconds": 3.774130123987561,
+      "processing_speed_realtime": 1.5897703054447667,
+      "quality": {
+        "ssim": {
+          "mean": 0.9977525808383234,
+          "minimum": 0.99677
+        },
+        "psnr": {
+          "mean": 46.92179640718563,
+          "minimum": 44.87
+        }
+      },
+      "audio_codecs": {
+        "alac": 3,
+        "pcm_f32le": 3
+      },
+      "audio_packet_bytes": 422080,
+      "methods": {
+        "compact-reencode": 9
+      },
+      "visual_review": "not-reviewed",
+      "consumer_playback": "not-reviewed"
+    },
+    "h264-crf20": {
+      "runs": 3,
+      "structural_passes": 3,
+      "structural_failures": 0,
+      "source_bytes": 513176,
+      "output_bytes": 742375,
+      "output_source_ratio": 1.4466284471604285,
+      "wall_seconds": 3.7703824150084984,
+      "processing_speed_realtime": 1.5913505155647392,
+      "quality": {
+        "ssim": {
+          "mean": 0.9968321556886227,
+          "minimum": 0.99529
+        },
+        "psnr": {
+          "mean": 45.01083832335329,
+          "minimum": 42.7
+        }
+      },
+      "audio_codecs": {
+        "alac": 3,
+        "pcm_f32le": 3
+      },
+      "audio_packet_bytes": 422080,
+      "methods": {
+        "compact-reencode": 9
+      },
+      "visual_review": "not-reviewed",
+      "consumer_playback": "not-reviewed"
+    },
+    "hevc-crf16": {
+      "runs": 3,
+      "structural_passes": 3,
+      "structural_failures": 0,
+      "source_bytes": 580810,
+      "output_bytes": 955345,
+      "output_source_ratio": 1.6448494344105646,
+      "wall_seconds": 4.933178416977171,
+      "processing_speed_realtime": 1.2162544089934881,
+      "quality": {
+        "ssim": {
+          "mean": 0.9987013055555555,
+          "minimum": 0.99806
+        },
+        "psnr": {
+          "mean": 50.783277777777776,
+          "minimum": 48.62
+        }
+      },
+      "audio_codecs": {
+        "alac": 3,
+        "pcm_f32le": 3
+      },
+      "audio_packet_bytes": 422080,
+      "methods": {
+        "compact-reencode": 9
+      },
+      "visual_review": "not-reviewed",
+      "consumer_playback": "not-reviewed"
+    },
+    "hevc-crf18": {
+      "runs": 3,
+      "structural_passes": 3,
+      "structural_failures": 0,
+      "source_bytes": 580810,
+      "output_bytes": 896575,
+      "output_source_ratio": 1.543663160069558,
+      "wall_seconds": 4.778128958016168,
+      "processing_speed_realtime": 1.2557216543797807,
+      "quality": {
+        "ssim": {
+          "mean": 0.9982973722222221,
+          "minimum": 0.997451
+        },
+        "psnr": {
+          "mean": 49.226444444444446,
+          "minimum": 47.03
+        }
+      },
+      "audio_codecs": {
+        "alac": 3,
+        "pcm_f32le": 3
+      },
+      "audio_packet_bytes": 422080,
+      "methods": {
+        "compact-reencode": 9
+      },
+      "visual_review": "not-reviewed",
+      "consumer_playback": "not-reviewed"
+    },
+    "hevc-crf20": {
+      "runs": 3,
+      "structural_passes": 3,
+      "structural_failures": 0,
+      "source_bytes": 580810,
+      "output_bytes": 840398,
+      "output_source_ratio": 1.4469413405416574,
+      "wall_seconds": 4.858161500975257,
+      "processing_speed_realtime": 1.2350351051103434,
+      "quality": {
+        "ssim": {
+          "mean": 0.9976488,
+          "minimum": 0.996484
+        },
+        "psnr": {
+          "mean": 47.40244444444445,
+          "minimum": 45.34
+        }
+      },
+      "audio_codecs": {
+        "alac": 3,
+        "pcm_f32le": 3
+      },
+      "audio_packet_bytes": 422080,
+      "methods": {
+        "compact-reencode": 9
+      },
+      "visual_review": "not-reviewed",
+      "consumer_playback": "not-reviewed"
+    }
+  },
+  "owner_decision": {
+    "status": "pending",
+    "selected_crf": null,
+    "reason": null
+  },
+  "limitations": [
+    "Generated coverage does not replace private holdout visual review.",
+    "Runtime includes a second encode for content correspondence.",
+    "Reference replay requires certified encoder settings/build.",
+    "Native PCM fallback can exceed original compressed audio size."
+  ],
+  "hardware": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "logical_cpus": 10,
+    "threads_per_encode": 2
+  }
+}

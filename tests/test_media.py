@@ -3,6 +3,46 @@ from fractions import Fraction
 import pytest
 
 
+@pytest.mark.parametrize('marker', ['DOVI configuration record', 'Mastering display metadata',
+                                    'Content light level metadata', 'Dynamic HDR Plus'])
+def test_hdr_metadata_predicate_catches_side_data_without_hdr_transfer(marker):
+    from framecleave.media import hdr_metadata_present
+
+    assert hdr_metadata_present({'color_transfer': 'bt709',
+                                 'side_data_list': [{'side_data_type': marker}]}) is True
+    assert hdr_metadata_present({'color_transfer': 'bt709', 'side_data_list': []}) is False
+
+
+def test_ffmpeg_build_fingerprint_tracks_selected_encoder_probe(monkeypatch):
+    import framecleave.media as media
+
+    monkeypatch.setattr(media, 'encoder_probe_bytes', lambda encoder: b'probe-one', raising=False)
+    first = media.ffmpeg_build_fingerprint('libx264')
+    monkeypatch.setattr(media, 'encoder_probe_bytes', lambda encoder: b'probe-two', raising=False)
+    second = media.ffmpeg_build_fingerprint('libx264')
+    assert first != second
+
+
+def test_ffmpeg_build_fingerprint_probes_only_the_selected_encoder(monkeypatch):
+    import framecleave.media as media
+
+    commands = []
+    real_run = media.run
+
+    def capture(command, **kwargs):
+        commands.append(list(command))
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(media, 'run', capture)
+    media.ffmpeg_build_fingerprint('libx264')
+    probes = [command for command in commands if 'libx264' in command or 'libx265' in command]
+    assert probes and all('libx264' in command for command in probes)
+    commands.clear()
+    media.ffmpeg_build_fingerprint('libx265')
+    probes = [command for command in commands if 'libx264' in command or 'libx265' in command]
+    assert probes and all('libx265' in command for command in probes)
+
+
 def test_probe_reports_actual_streams_and_hash(source_video):
     from framecleave.media import probe
     media = probe(source_video)
