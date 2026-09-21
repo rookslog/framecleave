@@ -52,6 +52,40 @@ def atomic_json(path: Path, value: dict) -> None:
     atomic_bytes(path, (json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2) + '\n').encode('utf-8'))
 
 
+def atomic_write_noclobber(path: Path, writer) -> None:
+    """Publish a file durably only when no destination exists; never replace one.
+
+    A sibling temporary file is fsynced, then linked into place. The hard link is
+    exclusive: a file created after any caller preflight raises FileExistsError and
+    is left untouched, unlike os.replace()-based atomic_write().
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise FileExistsError(f"Refusing to replace a symlink: {path}")
+    with reserve_temp(0) as reservation:
+        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+        try:
+            with os.fdopen(fd, 'wb') as handle:
+                writer(_ReservedWriter(handle, reservation))
+                handle.flush()
+                os.fsync(handle.fileno())
+            try:
+                os.link(temporary, path)
+            except FileExistsError as exc:
+                raise FileExistsError(f"Refusing to overwrite existing file: {path}") from exc
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+
+
+def atomic_bytes_noclobber(path: Path, payload: bytes) -> None:
+    atomic_write_noclobber(path, lambda handle: handle.write(payload))
+
+
+def atomic_json_noclobber(path: Path, value: dict) -> None:
+    atomic_bytes_noclobber(path, (json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2) + '\n').encode('utf-8'))
+
+
 class JobDirectory:
     """Resume may reclaim a dead *local* PID, never a live or foreign-host lock."""
     def __init__(self, path: Path, *, resume: bool = False):

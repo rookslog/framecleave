@@ -10,13 +10,19 @@ import time
 import uuid
 
 from .limited_process import run_limited
-from .media import MediaInfo, PreservationError, audit_frame_metadata, executable, hdr_metadata_present, probe
+from .media import (MediaInfo, PreservationError, audit_frame_metadata, executable,
+                    hdr_metadata_present, probe, sha256_file)
 from .model import read_index, validate_index
 from .progress import ProgressReporter, ProgressSink
 from .review_copy import validate_review_certificate
-from .storage import JobLog, atomic_json
+from .storage import JobLog, atomic_json_noclobber
 from .tempbudget import reserve_temp, temporary_budget
 from .workflow import _assert_contained, _segmentation_digest
+
+
+def _display_rotations(payload: dict) -> list:
+    """Nonzero display-matrix rotations that make FFmpeg autorotate an input."""
+    return [entry.get('rotation') for entry in payload.get('side_data_list', []) if entry.get('rotation')]
 
 
 def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output: Path, *,
@@ -67,6 +73,10 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
         actual = probe(clip)
         if actual.sha256 != cert.get('output_sha256'):
             raise ValueError('Selected clip digest differs')
+        rotations = _display_rotations(actual.video)
+        if rotations:
+            raise PreservationError(
+                f'Selected clip has nonzero display rotation {rotations}; assembly would autorotate it')
         attributes = ['codec_name', 'width', 'height', 'pix_fmt', 'sample_aspect_ratio',
                       'color_range', 'color_space', 'color_transfer', 'color_primaries']
         current = ([actual.video.get(k) for k in attributes],
@@ -97,7 +107,8 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
     command = [executable('ffmpeg'), '-nostdin', '-hide_banner', '-v', 'warning', '-xerror', '-y',
                '-nostats', '-progress', 'pipe:2', '-stats_period', '1']
     for number, item in enumerate(selected):
-        command += ['-threads', str(threads), '-protocol_whitelist', 'file,pipe,crypto', '-i', item['path']]
+        command += ['-threads', str(threads), '-noautorotate', '-protocol_whitelist', 'file,pipe,crypto',
+                    '-i', item['path']]
         duration = f"{float(Fraction(item['source_range']['duration_rational'])):.12f}"
         graph.append(f'[{number}:v:0]trim=start=0:duration={duration},setpts=PTS-STARTPTS[v{number}]')
         labels.append(f'[v{number}]')
@@ -146,10 +157,13 @@ def assemble(index_paths: list[Path], selections: list[tuple[int, int]], output:
                   'wall_seconds': time.monotonic()-started,
                   'diagnostics': diagnostics.name,
                   'warnings': ['CRF controls quality, not final file size.', 'Packet-copy edges and audio joins are not sample/pixel-exact.']}
+        for item in selected:
+            if sha256_file(item['path']) != item['sha256']:
+                raise ValueError(f"Selected clip changed during assembly: {item['path']}")
         os.link(partial, output)
         partial.unlink()
         media_reservation.close()
-        atomic_json(manifest, result)
+        atomic_json_noclobber(manifest, result)
         reporter.emit('job_finished', 'complete', outcome='success')
         return result
     except BaseException as exc:

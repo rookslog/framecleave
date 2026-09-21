@@ -329,6 +329,37 @@ def test_compact_verifier_rejects_corrupted_content_with_unchanged_timing(intege
             session.verify_compact_video(scene, probe(corrupted))
 
 
+def test_compact_quality_seeks_from_preceding_keyframe_not_zero(source_video, tmp_path, monkeypatch):
+    from fractions import Fraction
+    from framecleave.export import ExportSession
+    import framecleave.export as export_module
+    from framecleave.media import probe
+
+    info, timeline = timeline_from_source(source_video)
+    scene = timeline.scenes([7, 47])[2]
+    preceding = max(frame for frame in timeline.keyframes if frame <= scene['start_frame'])
+    assert preceding > 0
+    expected_seek = timeline.pts[preceding] * timeline.time_base
+    assert expected_seek > 0
+    with ExportSession(info, timeline, tmp_path / 'work', mode='compact', threads=1) as session:
+        output = tmp_path / 'later.mov'
+        session.export(scene, output)
+        commands = []
+        real_run = export_module.run
+
+        def capture(command, **kwargs):
+            commands.append(list(command))
+            return real_run(command, **kwargs)
+
+        monkeypatch.setattr(export_module, 'run', capture)
+        evidence = session._compact_quality(scene, probe(output), tmp_path)
+    assert evidence['frames_compared'] == scene['frame_count']
+    assert evidence['ssim'] and evidence['psnr']
+    assert len(commands) == 2
+    for command in commands:
+        assert Fraction(command[command.index('-ss') + 1]) == expected_seek
+
+
 def test_compact_quality_refuses_missing_ffmpeg_metric(source_video, tmp_path, monkeypatch):
     from framecleave.export import ExportSession
     from framecleave.media import MediaError

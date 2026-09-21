@@ -62,6 +62,24 @@ def test_disk_full_finalization_preserves_existing_json(tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == [path]
 
 
+def test_atomic_json_noclobber_publishes_only_when_absent(tmp_path):
+    from framecleave.storage import atomic_json_noclobber
+    path = tmp_path / 'manifest.json'
+    atomic_json_noclobber(path, {'status': 'ok'})
+    assert json.loads(path.read_text()) == {'status': 'ok'}
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_atomic_json_noclobber_preserves_concurrent_file(tmp_path):
+    from framecleave.storage import atomic_json_noclobber
+    path = tmp_path / 'manifest.json'
+    path.write_text('concurrent owner')
+    with pytest.raises(FileExistsError):
+        atomic_json_noclobber(path, {'status': 'new'})
+    assert path.read_text() == 'concurrent owner'
+    assert list(tmp_path.iterdir()) == [path]
+
+
 def test_new_job_directory_is_owner_only_even_with_permissive_umask(tmp_path):
     import os
     import stat

@@ -36,6 +36,71 @@ def test_assemble_selected_copies_once_without_originals(review_source, tmp_path
     assert not any(p.suffix in {'.wav', '.f32le', '.s16le'} for p in tmp_path.rglob('*'))
 
 
+def test_assemble_refuses_publication_when_selected_clip_changes(source_video, tmp_path, monkeypatch):
+    import framecleave.assemble as assemble_module
+
+    job = tmp_path / 'review'
+    process_video(source_video, job, Config(threads=1), cuts=[7, 47], mode='review-copy')
+    index = json.loads((job / 'scene-index.json').read_text())
+    clip = job / index['scenes'][0]['output_file']
+    target = tmp_path / 'final.mp4'
+    real_run_limited = assemble_module.run_limited
+    calls = {'count': 0}
+
+    def mutate_after_encode(command, partial, limit, **kwargs):
+        result = real_run_limited(command, partial, limit, **kwargs)
+        calls['count'] += 1
+        if calls['count'] == 1:
+            clip.write_bytes(clip.read_bytes() + b'\x00')
+        return result
+
+    monkeypatch.setattr(assemble_module, 'run_limited', mutate_after_encode)
+    with pytest.raises(ValueError, match='changed during assembly'):
+        assemble_module.assemble([job / 'scene-index.json'], [(1, 1)], target, threads=1)
+    assert not target.exists()
+    assert not (tmp_path / 'final.mp4.assembly.json').exists()
+    assert not list(tmp_path.glob('*.partial'))
+
+
+def test_assemble_refuses_rotated_selected_clip(source_video, tmp_path):
+    from framecleave.assemble import assemble
+    from framecleave.media import PreservationError
+
+    rotated = tmp_path / 'rotated.mp4'
+    run(['ffmpeg', '-v', 'error', '-display_rotation', '90', '-i', str(source_video), '-c', 'copy', str(rotated)])
+    job = tmp_path / 'review'
+    process_video(rotated, job, Config(threads=1), cuts=[7, 47], mode='review-copy')
+    target = tmp_path / 'final.mp4'
+    with pytest.raises(PreservationError, match='rotation'):
+        assemble([job / 'scene-index.json'], [(1, 1)], target, threads=1)
+    assert not target.exists()
+    assert not (tmp_path / 'final.mp4.assembly.json').exists()
+
+
+def test_assemble_manifest_publication_does_not_clobber_concurrent_sidecar(source_video, tmp_path, monkeypatch):
+    import framecleave.assemble as assemble_module
+
+    job = tmp_path / 'review'
+    process_video(source_video, job, Config(threads=1), cuts=[7, 47], mode='review-copy')
+    target = tmp_path / 'final.mp4'
+    manifest = tmp_path / 'final.mp4.assembly.json'
+    real_run_limited = assemble_module.run_limited
+    calls = {'count': 0}
+
+    def create_sidecar(command, partial, limit, **kwargs):
+        result = real_run_limited(command, partial, limit, **kwargs)
+        calls['count'] += 1
+        if calls['count'] == 2:
+            manifest.write_text('concurrent owner')
+        return result
+
+    monkeypatch.setattr(assemble_module, 'run_limited', create_sidecar)
+    with pytest.raises(ValueError, match='published'):
+        assemble_module.assemble([job / 'scene-index.json'], [(1, 1)], target, threads=1)
+    assert manifest.read_text() == 'concurrent owner'
+    assert target.exists()
+
+
 def test_assemble_normalizes_nonzero_container_start_time(tmp_path):
     from framecleave.assemble import assemble
 

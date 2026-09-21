@@ -207,19 +207,30 @@ class ExportSession:
 
     def _compact_quality(self, scene: dict, output: MediaInfo, directory: Path) -> dict:
         evidence = {'frames_compared': scene['frame_count']}
+        start_pts = self.timeline.endpoint(scene['start_frame'])
+        end_pts = self.timeline.endpoint(scene['end_frame'])
+        keyframe = max((k for k in self.timeline.keyframes if k <= scene['start_frame']), default=0)
+        # -copyts keeps the source's absolute PTS, but a container start-time offset
+        # (e.g. an MP4 edit list) is not applied to -ss; seek within the raw media.
+        raw_origin = self.info.document.get('format', {}).get('start_time')
+        origin = (self.timeline.pts[0] * self.timeline.time_base if raw_origin in {None, 'N/A'}
+                  else Fraction(raw_origin))
+        seek_time = self.timeline.pts[keyframe] * self.timeline.time_base - origin
         for metric, key in (('ssim', 'All'), ('psnr', 'psnr_avg')):
             stats = directory / f'{metric}.txt'
             graph = (
-                f"[0:{self.info.video['index']}]trim=start_frame={scene['start_frame']}:"
-                f"end_frame={scene['end_frame']},setpts=PTS-STARTPTS[source];"
+                f"[0:{self.info.video['index']}]trim=start_pts={start_pts}:"
+                f"end_pts={end_pts},setpts=PTS-STARTPTS[source];"
                 f"[1:{output.video['index']}]setpts=PTS-STARTPTS[output];"
                 f"[source][output]{metric}=stats_file={metric}.txt:shortest=1:repeatlast=0[metric]"
             )
-            command = ffmpeg_base() + ['-filter_complex_threads', '1', '-threads', str(self.threads),
-                                      '-noautorotate', '-protocol_whitelist', 'file,pipe,crypto',
-                                      '-i', str(self.info.path), '-noautorotate',
-                                      '-protocol_whitelist', 'file,pipe,crypto', '-i', str(output.path),
-                                      '-filter_complex', graph, '-map', '[metric]', '-an', '-f', 'null', '-']
+            command = ffmpeg_base() + ['-filter_complex_threads', '1', '-threads', str(self.threads), '-copyts']
+            if seek_time >= 0:
+                command += ['-seek_timestamp', '1', '-ss', decimal_seconds(seek_time)]
+            command += ['-noautorotate', '-protocol_whitelist', 'file,pipe,crypto',
+                        '-i', str(self.info.path), '-noautorotate',
+                        '-protocol_whitelist', 'file,pipe,crypto', '-i', str(output.path),
+                        '-filter_complex', graph, '-map', '[metric]', '-an', '-f', 'null', '-']
             run(command, cwd=directory)
             values = []
             if not stats.is_file():
