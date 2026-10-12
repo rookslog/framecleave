@@ -1,3 +1,3 @@
-"""FrameCleave: local hard-cut analysis and verified frame-exact export."""
+"""FrameCleave: scene analysis, stream-copy review, and optional exact export."""
 
-__version__ = "0.1.0rc1"
+__version__ = "0.2.0rc1"

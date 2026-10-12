@@ -76,6 +76,23 @@ class AudioSlice:
         }
 
 
+def audio_encoding(track: AudioTrack, policy: str) -> tuple[str, str]:
+    """Select only encodings that retain the canonical native sample precision."""
+    if policy in {'pcm', 'source-lossless'}:
+        return track.codec, 'native-pcm-policy'
+    if policy not in {'alac', 'alac-or-pcm'}:
+        raise ValueError(f'Unsupported audio encoding policy: {policy}')
+    layouts = {'mono', 'stereo', '3.0', '4.0', '5.0', '5.1', '6.1(back)', '7.1(wide)'}
+    if track.raw_format == 's16le' and track.layout in layouts:
+        return 'alac', 'verified-16-bit-integer'
+    if policy == 'alac':
+        raise PreservationError('ALAC cannot preserve this native audio precision or layout')
+    reason = ('native-float-precision' if track.raw_format in {'f32le', 'f64le'}
+              else 'native-integer-precision' if track.raw_format != 's16le'
+              else 'native-channel-layout')
+    return track.codec, reason
+
+
 def extract_audio(info: MediaInfo, directory: Path, *, threads: int = 2) -> list[AudioTrack]:
     directory.mkdir(parents=True, exist_ok=True)
     tracks = []

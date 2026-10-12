@@ -72,7 +72,25 @@ pre{overflow:auto;font-size:12px}.tag{font-size:13px;border:1px solid #6d7884;bo
             if asset:
                 number = scene['start_frame'] if key == 'start' else scene['last_frame']
                 parts.append(f'<figure><img loading="lazy" src="{_safe_asset(asset)}" alt="{key} frame {number}"><figcaption>{key.capitalize()} · frame {number}</figcaption></figure>')
-        parts.append('</div></section>')
+        parts.append('</div>')
+        annotation = scene.get('transition', {})
+        if annotation.get('classification') in {'transition_candidate', 'ambiguous'}:
+            label = 'transition candidate' if annotation['classification'] == 'transition_candidate' else 'ambiguous transition'
+            parts.append(f"<p class='note'>{label} · [{scene['start_frame']}, {scene['end_frame']}) · Default: keep. "
+                         'Classification alone never removes frames; review audio and neighboring content.</p>')
+            parts.append('<details><summary>Uncalibrated transition evidence</summary><pre>' +
+                         escape(json.dumps(annotation.get('evidence', {}), indent=2)) + '</pre></details>')
+            selected = ','.join(str(s['number']) for s in index['scenes'] if s['number'] != scene['number'])
+            if selected:
+                parts.append('<p>For review-copy jobs only: after listening/reviewing, optionally omit this scene '
+                             'from the final assembly (replace JOB). This never deletes its review clip:</p><pre>' + escape(
+                    f'framecleave assemble JOB/scene-index.json --scenes {selected} -o selected.mp4 --crf 18'
+                ) + '</pre>')
+            parts.append('<p>Automatic omission, transition collapse and keyframe planning are deferred. Default: keep.</p>')
+        if scene.get('output_file'):
+            parts.append(f'<p><a href="{_safe_asset(scene["output_file"])}">Open scene clip</a> · '
+                         'Intended boundaries above may differ from packet-copy preview edges.</p>')
+        parts.append('</section>')
     for decision, title in [('cut', 'Accepted boundaries'), ('review', 'Needs review')]:
         parts.append(f'<h2>{title}</h2>')
         if decision == 'review':

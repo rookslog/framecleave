@@ -1,6 +1,8 @@
 from fractions import Fraction
 import hashlib
 
+import pytest
+
 
 
 def test_audio_cache_and_exact_sample_slice(source_video, tmp_path):
@@ -39,3 +41,17 @@ def test_audio_outside_scene_returns_no_track(tmp_path):
     raw.write_bytes(bytes(40))
     t = AudioTrack(0, raw, 10, 1, "mono", "s16le", "pcm_s16le", 2, 20, 100, 0, {})
     assert slice_track(t, Fraction(0), Fraction(1), tmp_path / "clip") is None
+
+
+@pytest.mark.parametrize(('raw_format', 'codec', 'sample_bytes', 'expected'), [
+    ('s16le', 'pcm_s16le', 2, ('alac', 'verified-16-bit-integer')),
+    ('s32le', 'pcm_s32le', 4, ('pcm_s32le', 'native-integer-precision')),
+    ('f32le', 'pcm_f32le', 4, ('pcm_f32le', 'native-float-precision')),
+])
+def test_compact_audio_selection_never_quantizes_native_samples(tmp_path, raw_format, codec,
+                                                               sample_bytes, expected):
+    from framecleave.audio import AudioTrack, audio_encoding
+
+    track = AudioTrack(0, tmp_path / 'raw', 48000, 1, 'mono', raw_format, codec,
+                       sample_bytes, 1, 0, 0, {})
+    assert audio_encoding(track, 'alac-or-pcm') == expected

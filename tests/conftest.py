@@ -25,3 +25,17 @@ def media_dir(tmp_path_factory):
 @pytest.fixture
 def source_video(media_dir: Path) -> Path:
     return media_dir / "source.mp4"
+
+
+@pytest.fixture(params=['h264', 'hevc'])
+def integer_audio_video(request, tmp_path):
+    source = tmp_path / f'integer-{request.param}.mov'
+    encoder = 'libx264' if request.param == 'h264' else 'libx265'
+    command = ['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+               'testsrc2=size=160x120:rate=30:duration=2', '-f', 'lavfi', '-i',
+               'sine=frequency=500:sample_rate=48000:duration=2',
+               '-c:v', encoder, '-threads', '1', '-g', '60', '-c:a', 'pcm_s16le']
+    if request.param == 'hevc':
+        command += ['-x265-params', 'pools=1:frame-threads=1:log-level=error']
+    subprocess.run(command + [str(source)], check=True, capture_output=True)
+    return source
